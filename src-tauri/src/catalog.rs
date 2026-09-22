@@ -179,8 +179,23 @@ struct CatalogSnapshot {
 }
 
 fn load_snapshot() -> Option<Vec<BankItem>> {
-    let raw = fs::read_to_string(snapshot_path().ok()?).ok()?;
+    let path = snapshot_path().ok()?;
+    let raw = fs::read_to_string(&path).ok()?;
     let snap: CatalogSnapshot = serde_json::from_str(&raw).ok()?;
+    if snap
+        .items
+        .first()
+        .is_some_and(|item| item.path.starts_with("https://"))
+    {
+        let fresh = fs::metadata(&path)
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|time| time.elapsed().ok())
+            .is_some_and(|age| age.as_secs() < 600);
+        if !fresh {
+            return None;
+        }
+    }
     if snap.items.is_empty() {
         return None;
     }
@@ -301,10 +316,83 @@ fn ensure_vibestarter(force: bool) -> Result<(), String> {
         *lock_cache() = Some(items);
         return Ok(());
     }
-    let items = scan_vibestarter()?;
+    let mut items = scan_vibestarter()?;
+    if items.is_empty() {
+        if let Ok(remote) = fetch_remote_vibestarter() {
+            if !remote.is_empty() {
+                items = remote;
+            }
+        }
+    }
+    if items.is_empty() {
+        return Ok(());
+    }
     save_snapshot(&items);
     *lock_cache() = Some(items);
     Ok(())
+}
+
+const REMOTE_VIBE_BASE: &str = "https://lumen-vibestarter.contact-delaplacetheo.workers.dev";
+
+#[derive(Deserialize)]
+struct RemoteVibeEntry {
+    path: String,
+    kind: String,
+    name: String,
+}
+
+fn fetch_remote_vibestarter() -> Result<Vec<BankItem>, String> {
+    if REMOTE_VIBE_BASE.contains("REPLACE") {
+        return Ok(Vec::new());
+    }
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .user_agent("Lumen/0.1")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client
+        .get(format!("{REMOTE_VIBE_BASE}/manifest.json"))
+        .send()
+        .map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("Catalogue distant: HTTP {}", response.status()));
+    }
+    let entries: Vec<RemoteVibeEntry> = response.json().map_err(|e| e.to_string())?;
+    let mut items = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let rel = entry.path.replace('\\', "/");
+        if rel.contains("..") || rel.is_empty() {
+            continue;
+        }
+        let encoded = rel
+            .split('/')
+            .map(|part| urlencoding::encode(part).into_owned())
+            .collect::<Vec<_>>()
+            .join("/");
+        let url = format!("{REMOTE_VIBE_BASE}/vibe/{encoded}");
+        let kind = if entry.kind == "mesh" { "mesh" } else { "image" };
+        items.push(BankItem {
+            id: format!("vs:{kind}:{rel}"),
+            name: if entry.name.trim().is_empty() {
+                display_name(rel.rsplit('/').next().unwrap_or("asset"))
+            } else {
+                entry.name
+            },
+            kind: kind.into(),
+            path: url.clone(),
+            source: "vibestarter".into(),
+            created_at: "0".into(),
+            roblox_asset_id: None,
+            preview_path: if kind == "image" { Some(url.clone()) } else { None },
+            code: String::new(),
+            scale_type: None,
+            tile_size: None,
+            hash: String::new(),
+            shared: true,
+        });
+    }
+    items.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(items)
 }
 
 pub fn with_vibestarter<R>(force: bool, f: impl FnOnce(&[BankItem]) -> R) -> Result<R, String> {

@@ -41,6 +41,9 @@ async function blobUrlFromDisk(path: string) {
 }
 
 async function resolveModelUrl(path: string) {
+  if (path.startsWith("https://") || path.startsWith("http://")) {
+    return { url: path, revoke: false };
+  }
   const url = convertFileSrc(path);
   if (url) return { url, revoke: false };
   return { url: await blobUrlFromDisk(path), revoke: true };

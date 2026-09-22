@@ -19,6 +19,7 @@ export function bankImageSrc(item: {
   robloxAssetId?: string | null;
 }) {
   const file = item.previewPath || item.path || "";
+  if (file.startsWith("https://") || file.startsWith("http://")) return file;
   if (/\.(png|jpe?g|webp|gif|bmp)$/i.test(file) || /studio-thumbs/i.test(file)) {
     return convertFileSrc(file);
   }

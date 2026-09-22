@@ -1735,8 +1735,8 @@ function VibePathField({
         </button>
       </div>
       <small className="lede" style={{ marginTop: 6, display: "block" }}>
-        VibeStarter ne met pas le pack dans le cloud : chaque PC a les mêmes fichiers en local.
-        Copie le dossier (~9 Go) via USB ou OneDrive, puis Enregistrer. Laisse vide pour le chemin par défaut.
+        Si ce dossier est sur le PC, Lumen l’utilise. Sinon le pack s’affiche depuis le cloud, image par image.
+        Laisse vide pour le chemin par défaut.
       </small>
     </label>
   );
@@ -1926,7 +1926,7 @@ function Settings({
             <small className="lede" style={{ display: "block", marginTop: 4 }}>
               Comme VibeStarter : un nouvel icône ou mesh rejoint le catalogue commun, les autres
               Lumen le reçoivent. Désactive si tu veux rester uniquement en local. Le pack
-              VibeStarter (~9 Go) reste le leur, on ne le republie pas.
+              VibeStarter est hébergé à part et s’affiche même sans le dossier.
             </small>
           </span>
         </label>
@@ -2223,8 +2223,8 @@ function Bank() {
     <div>
       <h1>Banque</h1>
       <p className="lede">
-        Lumen, les textures et l’inspiration se partagent entre les Lumen. VibeStarter reste le pack
-        local (~9 Go) : il n’est pas renvoyé en ligne. Les images ne chargent qu’une page à la fois.
+        Lumen, les textures et l’inspiration se partagent entre les Lumen. VibeStarter s’affiche
+        depuis le cloud si le dossier n’est pas sur ce PC. Les images ne chargent qu’une page à la fois.
       </p>
       <div className="bank-shelves" role="tablist">
         <button
@@ -2520,7 +2520,7 @@ function Bank() {
             ? "La banque Lumen est vide. Génère dans l’Atelier : le partage envoie tes ajouts aux autres Lumen."
             : shelf === "textures"
             ? "Aucune texture pour l’instant. Celles de ton compte arrivent à l’ouverture de la banque. Tu peux aussi poser des PNG dans Images/textures."
-            : "VibeStarter n’est pas dans le partage : c’est un pack d’environ 9 Go, trop lourd pour circuler avec Lumen. Il apparaît ici seulement s’il est déjà sur ce PC (dossier AssetsDownloader/vibestarter_assets)."}
+            : "Le pack VibeStarter se charge depuis le cloud. S’il est encore vide, l’envoi n’est pas terminé : rouvre la banque dans quelques minutes."}
         </div>
       ) : (
         <>

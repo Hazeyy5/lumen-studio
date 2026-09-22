@@ -1,0 +1,15 @@
+{
+  "name": "lumen-vibestarter",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-22",
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 0.01
+  },
+  "r2_buckets": [
+    {
+      "binding": "BUCKET",
+      "bucket_name": "lumen-vibestarter"
+    }
+  ]
+}
