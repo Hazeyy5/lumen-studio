@@ -141,6 +141,129 @@ pub fn list_bank() -> Result<Vec<BankItem>, String> {
     Ok(items)
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BankCounts {
+    pub lumen: usize,
+    pub inspiration: usize,
+    pub vibe: usize,
+    pub vibe_images: usize,
+    pub vibe_meshes: usize,
+    pub textures: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BankPage {
+    pub total: usize,
+    pub items: Vec<BankItem>,
+    pub recent: Vec<BankItem>,
+}
+
+fn matches_query(item: &BankItem, query: &str, kind: &str) -> bool {
+    if !kind.is_empty() && kind != "all" && item.kind != kind {
+        return false;
+    }
+    if query.is_empty() {
+        return true;
+    }
+    item.name.to_ascii_lowercase().contains(query)
+        || item.code.to_ascii_lowercase().contains(query)
+        || item
+            .roblox_asset_id
+            .as_deref()
+            .unwrap_or("")
+            .to_ascii_lowercase()
+            .contains(query)
+}
+
+fn page_of(items: &[BankItem], query: &str, kind: &str, offset: usize, limit: usize) -> (usize, Vec<BankItem>) {
+    let mut total = 0usize;
+    let mut page = Vec::new();
+    for item in items {
+        if !matches_query(item, query, kind) {
+            continue;
+        }
+        if total >= offset && page.len() < limit {
+            page.push(item.clone());
+        }
+        total += 1;
+    }
+    (total, page)
+}
+
+#[tauri::command]
+pub fn bank_counts(force: Option<bool>) -> Result<BankCounts, String> {
+    let force = force.unwrap_or(false);
+    let index = load_index()?;
+    let inspiration = index.iter().filter(|item| is_inspiration(item)).count();
+    let (vibe, vibe_images, vibe_meshes) = crate::catalog::with_vibestarter(force, |items| {
+        let images = items.iter().filter(|item| item.kind == "image").count();
+        let meshes = items.iter().filter(|item| item.kind == "mesh").count();
+        (items.len(), images, meshes)
+    })?;
+    if force {
+        crate::textures::clear_cache();
+    }
+    let textures = crate::textures::list_textures().map(|items| items.len()).unwrap_or(0);
+    Ok(BankCounts {
+        lumen: index.len().saturating_sub(inspiration),
+        inspiration,
+        vibe,
+        vibe_images,
+        vibe_meshes,
+        textures,
+    })
+}
+
+#[tauri::command]
+pub fn bank_page(
+    shelf: String,
+    kind: Option<String>,
+    query: Option<String>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Result<BankPage, String> {
+    let kind = kind.unwrap_or_default().trim().to_ascii_lowercase();
+    let query = query.unwrap_or_default().trim().to_ascii_lowercase();
+    let offset = offset.unwrap_or(0);
+    let limit = limit.unwrap_or(48).clamp(1, 60);
+    let shelf = shelf.trim().to_ascii_lowercase();
+    if shelf == "vibestarter" {
+        return crate::catalog::with_vibestarter(false, |items| {
+            let (total, page) = page_of(items, &query, &kind, offset, limit);
+            let recent = if query.is_empty() {
+                items.iter().take(12).cloned().collect()
+            } else {
+                Vec::new()
+            };
+            BankPage {
+                total,
+                items: page,
+                recent,
+            }
+        });
+    }
+    let source = if shelf == "textures" {
+        crate::textures::list_textures().unwrap_or_default()
+    } else {
+        let mut items = load_index()?;
+        if shelf == "inspiration" {
+            items.retain(is_inspiration);
+        } else {
+            items.retain(|item| !is_inspiration(item));
+        }
+        items.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        items
+    };
+    let (total, page) = page_of(&source, &query, &kind, offset, limit);
+    Ok(BankPage {
+        total,
+        items: page,
+        recent: Vec::new(),
+    })
+}
+
 pub fn search_library(
     query: &str,
     kind: Option<&str>,

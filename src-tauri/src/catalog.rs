@@ -289,23 +289,32 @@ pub fn list_vibestarter() -> Result<Vec<BankItem>, String> {
     list_vibestarter_inner(false)
 }
 
-fn list_vibestarter_inner(force: bool) -> Result<Vec<BankItem>, String> {
-    if !force {
-        if let Some(items) = lock_cache().as_ref() {
-            return Ok(items.clone());
+fn ensure_vibestarter(force: bool) -> Result<(), String> {
+    if force {
+        clear_catalog_cache();
+    } else if lock_cache().is_some() {
+        return Ok(());
+    } else if let Some(mut items) = load_snapshot() {
+        if let Ok(meta) = load_meta() {
+            overlay_meta(&mut items, &meta);
         }
-        if let Some(mut items) = load_snapshot() {
-            if let Ok(meta) = load_meta() {
-                overlay_meta(&mut items, &meta);
-            }
-            *lock_cache() = Some(items.clone());
-            return Ok(items);
-        }
+        *lock_cache() = Some(items);
+        return Ok(());
     }
     let items = scan_vibestarter()?;
-    *lock_cache() = Some(items.clone());
     save_snapshot(&items);
-    Ok(items)
+    *lock_cache() = Some(items);
+    Ok(())
+}
+
+pub fn with_vibestarter<R>(force: bool, f: impl FnOnce(&[BankItem]) -> R) -> Result<R, String> {
+    ensure_vibestarter(force)?;
+    let guard = lock_cache();
+    Ok(f(guard.as_deref().unwrap_or(&[])))
+}
+
+fn list_vibestarter_inner(force: bool) -> Result<Vec<BankItem>, String> {
+    with_vibestarter(force, |items| items.to_vec())
 }
 
 #[tauri::command]

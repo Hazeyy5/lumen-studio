@@ -8,7 +8,7 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { AgentTerminal } from "./AgentTerminal";
 import { AssetReviewHost } from "./AssetReview";
 import { AssetCode, AssetLightbox, bankImageSrc, lightboxFromBank, type LightboxAsset } from "./AssetLightbox";
-import { MeshPreview, MeshStill } from "./MeshPreview";
+import { MeshPreview } from "./MeshPreview";
 import { ptyBus } from "./ptyBus";
 import { imageBrief, imageFilesFromTransfer, savePastedFiles, type PastedImage } from "./pasteImage";
 import { applyTheme, readTheme, toggleTheme, type Theme } from "./theme";
@@ -2094,21 +2094,63 @@ function StudioTilingFields({
   );
 }
 
+function BankThumb({ item }: { item: BankItem }) {
+  if (item.kind === "image") {
+    const src = bankImageSrc(item);
+    if (!src) return <div className="bank-thumb" />;
+    return (
+      <img className="bank-thumb" src={src} alt={item.name} loading="lazy" decoding="async" />
+    );
+  }
+  if (item.kind === "mesh" && item.previewPath) {
+    return (
+      <img
+        className="bank-thumb bank-mesh"
+        src={convertFileSrc(item.previewPath)}
+        alt=""
+        loading="lazy"
+        decoding="async"
+      />
+    );
+  }
+  if (item.kind === "mesh") return <div className="bank-thumb bank-mesh">3D</div>;
+  return <div className="bank-thumb">{item.kind}</div>;
+}
+
+type BankCounts = {
+  lumen: number;
+  inspiration: number;
+  vibe: number;
+  vibeImages: number;
+  vibeMeshes: number;
+  textures: number;
+};
+
 function Bank() {
   const [shelf, setShelf] = useState<"lumen" | "vibestarter" | "inspiration" | "textures">("lumen");
-  const [lumenItems, setLumenItems] = useState<BankItem[]>([]);
-  const [vibeItems, setVibeItems] = useState<BankItem[]>([]);
-  const [textureItems, setTextureItems] = useState<BankItem[]>([]);
+  const [counts, setCounts] = useState<BankCounts>({
+    lumen: 0,
+    inspiration: 0,
+    vibe: 0,
+    vibeImages: 0,
+    vibeMeshes: 0,
+    textures: 0,
+  });
+  const [pageItems, setPageItems] = useState<BankItem[]>([]);
+  const [recent, setRecent] = useState<BankItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [kindFilter, setKindFilter] = useState<"all" | "image" | "mesh">("all");
   const [vibeCat, setVibeCat] = useState<"home" | "image" | "mesh">("home");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(0);
   const [err, setErr] = useState("");
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [texName, setTexName] = useState("");
   const [texId, setTexId] = useState("");
   const [lightbox, setLightbox] = useState<LightboxAsset | null>(null);
   const [ready, setReady] = useState(false);
+  const [reload, setReload] = useState(0);
   const pageSize = 48;
 
   async function refresh(force = false) {
@@ -2116,21 +2158,13 @@ function Bank() {
       const sync = await invoke<{ pulled: number; pushed: number; message: string }>(
         "sync_shared_bank",
       ).catch(() => null);
-      if (sync && (sync.pulled > 0 || sync.pushed > 0)) {
-        setErr(sync.message);
-      }
+      if (sync && (sync.pulled > 0 || sync.pushed > 0)) setNote(sync.message);
     } catch {
       /* hors-ligne : on affiche la banque locale */
     }
-    const [lumen, vibe, textures] = await Promise.all([
-      invoke<BankItem[]>("list_bank"),
-      invoke<BankItem[]>("list_vibestarter_bank", { force }).catch(() => [] as BankItem[]),
-      invoke<BankItem[]>("list_textures_bank", { force }).catch(() => [] as BankItem[]),
-    ]);
-    setLumenItems(lumen);
-    setVibeItems(vibe);
-    setTextureItems(textures);
-    setReady(true);
+    const overview = await invoke<BankCounts>("bank_counts", { force });
+    setCounts(overview);
+    setReload((value) => value + 1);
   }
 
   useEffect(() => {
@@ -2141,22 +2175,6 @@ function Bank() {
     setPage(0);
   }, [shelf, kindFilter, vibeCat, query]);
 
-  const playableItems = useMemo(
-    () => lumenItems.filter((item) => !isInspirationItem(item)),
-    [lumenItems],
-  );
-  const inspirationItems = useMemo(
-    () => lumenItems.filter(isInspirationItem),
-    [lumenItems],
-  );
-  const items =
-    shelf === "lumen"
-      ? playableItems
-      : shelf === "inspiration"
-        ? inspirationItems
-        : shelf === "textures"
-          ? textureItems
-          : vibeItems;
   const activeKind =
     shelf === "vibestarter"
       ? vibeCat === "home"
@@ -2166,45 +2184,47 @@ function Bank() {
         ? "all"
         : kindFilter;
   const vibeHome = shelf === "vibestarter" && vibeCat === "home" && !query.trim();
-  const recentVibe = useMemo(
-    () =>
-      [...vibeItems]
-        .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
-        .slice(0, 12),
-    [vibeItems],
-  );
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return items.filter((item) => {
-      if (activeKind !== "all" && item.kind !== activeKind) return false;
-      if (!q) return true;
-      return (
-        item.name.toLowerCase().includes(q) ||
-        (item.code ?? "").toLowerCase().includes(q) ||
-        item.path.toLowerCase().includes(q) ||
-        (item.robloxAssetId ?? "").toLowerCase().includes(q)
-      );
-    });
-  }, [items, activeKind, query]);
-  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+
+  useEffect(() => {
+    let cancel = false;
+    const timer = window.setTimeout(() => {
+      void invoke<{ total: number; items: BankItem[]; recent: BankItem[] }>("bank_page", {
+        shelf,
+        kind: activeKind,
+        query,
+        offset: page * pageSize,
+        limit: pageSize,
+      })
+        .then((result) => {
+          if (cancel) return;
+          setPageItems(result.items);
+          setRecent(result.recent);
+          setTotal(result.total);
+          setReady(true);
+        })
+        .catch((error) => {
+          if (!cancel) setErr(String(error));
+        });
+    }, query.trim() ? 180 : 0);
+    return () => {
+      cancel = true;
+      window.clearTimeout(timer);
+    };
+  }, [reload, shelf, query, page, activeKind, pageSize]);
+
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, pageCount - 1);
-  const visible = filtered.slice(safePage * pageSize, safePage * pageSize + pageSize);
-  const iconCount = useMemo(
-    () => vibeItems.filter((item) => item.kind === "image").length,
-    [vibeItems],
-  );
-  const meshCount = useMemo(
-    () => vibeItems.filter((item) => item.kind === "mesh").length,
-    [vibeItems],
-  );
+  const visible = pageItems;
+  const recentVibe = recent;
+  const iconCount = counts.vibeImages;
+  const meshCount = counts.vibeMeshes;
 
   return (
     <div>
       <h1>Banque</h1>
       <p className="lede">
-        Tes créations Lumen, VibeStarter, les textures (dossier local **et** IDs Roblox Studio),
-        et des captures d’inspiration. Publier envoie l’image (Decal) ou le mesh (Model GLB)
-        vers Roblox — pas les inspirations. Les IDs Studio sont déjà des `rbxassetid://`.
+        Lumen, les textures et l’inspiration se partagent entre les Lumen. VibeStarter reste le pack
+        local (~9 Go) : il n’est pas renvoyé en ligne. Les images ne chargent qu’une page à la fois.
       </p>
       <div className="bank-shelves" role="tablist">
         <button
@@ -2213,7 +2233,7 @@ function Bank() {
           className={`bank-shelf ${shelf === "lumen" ? "on" : ""}`}
           onClick={() => setShelf("lumen")}
         >
-          Lumen <span>{playableItems.length}</span>
+          Lumen <span>{counts.lumen}</span>
         </button>
         <button
           type="button"
@@ -2221,7 +2241,7 @@ function Bank() {
           className={`bank-shelf ${shelf === "vibestarter" ? "on" : ""}`}
           onClick={() => setShelf("vibestarter")}
         >
-          VibeStarter <span>{vibeItems.length}</span>
+          VibeStarter <span>{counts.vibe}</span>
         </button>
         <button
           type="button"
@@ -2229,7 +2249,7 @@ function Bank() {
           className={`bank-shelf ${shelf === "textures" ? "on" : ""}`}
           onClick={() => setShelf("textures")}
         >
-          Textures <span>{textureItems.length}</span>
+          Textures <span>{counts.textures}</span>
         </button>
         <button
           type="button"
@@ -2237,7 +2257,7 @@ function Bank() {
           className={`bank-shelf ${shelf === "inspiration" ? "on" : ""}`}
           onClick={() => setShelf("inspiration")}
         >
-          Inspiration <span>{inspirationItems.length}</span>
+          Inspiration <span>{counts.inspiration}</span>
         </button>
       </div>
       <div className="toolbar">
@@ -2450,6 +2470,7 @@ function Bank() {
           </button>
         </div>
       ) : null}
+      {note ? <p className="lede">{note}</p> : null}
       {err ? <p className="err">{err}</p> : null}
       {!ready ? <p className="lede">Chargement de la banque…</p> : null}
       {vibeHome ? (
@@ -2468,23 +2489,7 @@ function Bank() {
                       if (next) setLightbox(next);
                     }}
                   >
-                    {item.kind === "image" ? (
-                      <img src={convertFileSrc(item.path)} alt={item.name} />
-                    ) : (
-                      <MeshStill
-                        id={item.id}
-                        path={item.path}
-                        previewPath={item.previewPath}
-                        className="bank-thumb bank-mesh"
-                        onReady={(previewPath) => {
-                          setVibeItems((prev) =>
-                            prev.map((row) =>
-                              row.id === item.id ? { ...row, previewPath } : row,
-                            ),
-                          );
-                        }}
-                      />
-                    )}
+                    <BankThumb item={item} />
                     <span>{item.name}</span>
                   </button>
                 ))}
@@ -2507,15 +2512,15 @@ function Bank() {
             </div>
           </section>
         </div>
-      ) : filtered.length === 0 ? (
+      ) : total === 0 ? (
         <div className="empty">
           {shelf === "inspiration"
-            ? "Importe des captures d’HUD, boutiques ou menus. Dis ensuite à un agent de s’en inspirer — elles ne partent pas sur Roblox."
+            ? "Aucune capture pour l’instant. Celles que tu importes se partagent avec les autres Lumen, et ne partent pas sur Roblox."
             : shelf === "lumen"
-            ? "La banque Lumen est vide. Génère dans l’Atelier : le partage est actif, les autres Lumen verront tes ajouts après synchro. Ou Importer un pack zip."
+            ? "La banque Lumen est vide. Génère dans l’Atelier : le partage envoie tes ajouts aux autres Lumen."
             : shelf === "textures"
-            ? "Aucune texture. Ajoute des PNG dans Images/textures (copie le même dossier que sur l’autre PC), importe depuis Studio, ou colle un rbxassetid."
-            : "Aucun asset VibeStarter. Copie le dossier AssetsDownloader/vibestarter_assets (~9 Go, USB ou OneDrive) vers Documents, ou indique le chemin dans Réglages."}
+            ? "Aucune texture pour l’instant. Celles de ton compte arrivent à l’ouverture de la banque. Tu peux aussi poser des PNG dans Images/textures."
+            : "VibeStarter n’est pas dans le partage : c’est un pack d’environ 9 Go, trop lourd pour circuler avec Lumen. Il apparaît ici seulement s’il est déjà sur ce PC (dossier AssetsDownloader/vibestarter_assets)."}
         </div>
       ) : (
         <>
@@ -2524,7 +2529,7 @@ function Bank() {
               {vibeCat === "image" ? "Icônes" : "Modèles 3D"}
               <span>
                 {" "}
-                · {filtered.length} assets
+                · {total} assets
               </span>
             </h2>
           ) : shelf === "inspiration" ? (
@@ -2532,7 +2537,7 @@ function Bank() {
               Captures UI
               <span>
                 {" "}
-                · {filtered.length}
+                · {total}
               </span>
             </h2>
           ) : shelf === "textures" ? (
@@ -2540,7 +2545,7 @@ function Bank() {
               Textures
               <span>
                 {" "}
-                · {filtered.length}
+                · {total}
               </span>
             </h2>
           ) : null}
@@ -2554,29 +2559,7 @@ function Bank() {
                   if (next) setLightbox(next);
                 }}
               >
-                {item.kind === "image" ? (
-                  <img
-                    className="bank-thumb"
-                    src={bankImageSrc(item)}
-                    alt={item.name}
-                  />
-                ) : item.kind === "mesh" ? (
-                  <MeshStill
-                    id={item.id}
-                    path={item.path}
-                    previewPath={item.previewPath}
-                    onReady={(previewPath) => {
-                      const apply = (rows: BankItem[]) =>
-                        rows.map((row) =>
-                          row.id === item.id ? { ...row, previewPath } : row,
-                        );
-                      setLumenItems(apply);
-                      setVibeItems(apply);
-                    }}
-                  />
-                ) : (
-                  <div className="bank-thumb">{item.kind}</div>
-                )}
+                <BankThumb item={item} />
                 <div className="bank-card-head">
                   <h2>{item.name}</h2>
                 </div>
@@ -2599,7 +2582,7 @@ function Bank() {
                     key={`${item.id}:${item.scaleType ?? ""}:${item.tileSize?.xOffset ?? ""}:${item.tileSize?.yOffset ?? ""}`}
                     item={item}
                     onSaved={(saved) => {
-                      setTextureItems((rows) =>
+                      setPageItems((rows) =>
                         rows.map((row) => (row.id === saved.id ? saved : row)),
                       );
                     }}
@@ -2646,7 +2629,7 @@ function Bank() {
               <span>
                 {safePage + 1} / {pageCount}
                 {" · "}
-                {filtered.length} assets
+                {total} assets
               </span>
               <button
                 className="btn secondary"

@@ -41,6 +41,8 @@ struct SharedItem {
     file: String,
     #[serde(default)]
     preview: Option<String>,
+    #[serde(default)]
+    key: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -64,9 +66,6 @@ fn sharing_on() -> bool {
 }
 
 fn should_share(item: &BankItem) -> bool {
-    if crate::bank::is_inspiration(item) {
-        return false;
-    }
     if item.source.eq_ignore_ascii_case("vibestarter")
         || item.source.eq_ignore_ascii_case("texture")
     {
@@ -249,6 +248,7 @@ fn to_shared(item: &BankItem) -> SharedItem {
         hash: item.hash.clone(),
         file: format!("{}.{ext}", item.id),
         preview: item.preview_path.as_ref().map(|_| format!("preview-{}.png", item.id)),
+        key: String::new(),
     }
 }
 
@@ -257,6 +257,9 @@ fn pull_one(
     release: &GhRelease,
     remote: &SharedItem,
 ) -> Result<bool, String> {
+    if remote.source.eq_ignore_ascii_case("texture") {
+        return pull_texture_file(client, release, remote);
+    }
     let asset = release
         .assets
         .iter()
@@ -312,6 +315,103 @@ fn pull_one(
         shared: true,
     };
     crate::bank::ingest_shared(item)
+}
+
+fn pull_texture_file(
+    client: &reqwest::blocking::Client,
+    release: &GhRelease,
+    remote: &SharedItem,
+) -> Result<bool, String> {
+    let asset = release
+        .assets
+        .iter()
+        .find(|a| a.name == remote.file)
+        .ok_or_else(|| format!("Texture distante manquante: {}", remote.file))?;
+    if asset.size > MAX_FILE_BYTES {
+        return Err(format!("{} trop volumineux", remote.name));
+    }
+    let rel = remote.key.replace('\\', "/");
+    if rel.is_empty() || rel.contains("..") {
+        return Err("Chemin de texture invalide".into());
+    }
+    let dest = crate::textures::shared_textures_dir()?.join(&rel);
+    if dest.is_file() {
+        return Ok(false);
+    }
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let bytes = client
+        .get(&asset.browser_download_url)
+        .header("User-Agent", "Lumen/0.1")
+        .send()
+        .map_err(|e| e.to_string())?
+        .bytes()
+        .map_err(|e| e.to_string())?;
+    fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+
+fn push_texture(
+    client: &reqwest::blocking::Client,
+    token: &str,
+    release: &mut GhRelease,
+    catalog: &mut SharedCatalog,
+    item: &BankItem,
+) -> Result<bool, String> {
+    if !Path::new(&item.path).is_file() {
+        return Ok(false);
+    }
+    let key = item
+        .id
+        .strip_prefix("tex:")
+        .unwrap_or(&item.id)
+        .replace('\\', "/");
+    if catalog.items.iter().any(|row| row.id == item.id || row.key == key) {
+        return Ok(false);
+    }
+    let hash = crate::bank::sha256_file(Path::new(&item.path))?;
+    let ext = ext_of(&item.path);
+    let file = format!("{}.{ext}", item.code.replace(' ', "-"));
+    let mut shared = to_shared(item);
+    shared.file = file;
+    shared.key = key;
+    shared.hash = hash;
+    let bytes = fs::read(&item.path).map_err(|e| e.to_string())?;
+    upload_bytes(client, token, release, &shared.file, &bytes, "application/octet-stream")?;
+    catalog.items.push(shared);
+    *release = ensure_release(client, Some(token))?;
+    Ok(true)
+}
+
+fn pull_texture_catalog(client: &reqwest::blocking::Client, release: &GhRelease) -> Result<(), String> {
+    let Some(asset) = release.assets.iter().find(|a| a.name == "catalog-textures.json") else {
+        return Ok(());
+    };
+    let bytes = client
+        .get(&asset.browser_download_url)
+        .header("User-Agent", "Lumen/0.1")
+        .send()
+        .map_err(|e| e.to_string())?
+        .bytes()
+        .map_err(|e| e.to_string())?;
+    crate::textures::merge_catalog_json(&bytes)
+}
+
+fn push_texture_catalog(
+    client: &reqwest::blocking::Client,
+    token: &str,
+    release: &GhRelease,
+) -> Result<(), String> {
+    let Some(docs) = dirs::document_dir() else {
+        return Ok(());
+    };
+    let path = docs.join("Lumen").join("catalog-textures.json");
+    if !path.is_file() {
+        return Ok(());
+    }
+    let bytes = fs::read(&path).map_err(|e| e.to_string())?;
+    upload_bytes(client, token, release, "catalog-textures.json", &bytes, "application/json")
 }
 
 fn push_one(
@@ -424,6 +524,7 @@ fn sync_once(pull: bool, extra_push: Option<&BankItem>) -> Result<SyncStatus, St
         let mut catalog = download_catalog(&client, &release)?;
         let mut pulled = 0u32;
         if pull {
+            let _ = pull_texture_catalog(&client, &release);
             for remote in catalog.items.clone() {
                 match pull_one(&client, &release, &remote) {
                     Ok(true) => pulled += 1,
@@ -431,6 +532,7 @@ fn sync_once(pull: bool, extra_push: Option<&BankItem>) -> Result<SyncStatus, St
                     Err(_) => {}
                 }
             }
+            crate::textures::clear_cache();
         }
         let mut pushed = 0u32;
         if let Some(token) = token.as_deref() {
@@ -451,8 +553,21 @@ fn sync_once(pull: bool, extra_push: Option<&BankItem>) -> Result<SyncStatus, St
                     Err(_) => {}
                 }
             }
+            if let Ok(textures) = crate::textures::list_textures() {
+                for item in &textures {
+                    match push_texture(&client, token, &mut release, &mut catalog, item) {
+                        Ok(true) => {
+                            pushed += 1;
+                            changed = true;
+                        }
+                        Ok(false) => {}
+                        Err(_) => {}
+                    }
+                }
+            }
             if changed {
                 let _ = save_catalog(&client, token, &release, &catalog);
+                let _ = push_texture_catalog(&client, token, &release);
             }
         }
         let message = if token.is_none() && pulled == 0 && extra_push.is_some() {

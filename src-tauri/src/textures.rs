@@ -28,7 +28,16 @@ struct CatalogEntry {
     tile_size: Option<TileSize>,
 }
 
-pub fn textures_root() -> Option<PathBuf> {
+pub fn shared_textures_dir() -> Result<PathBuf, String> {
+    let dir = dirs::document_dir()
+        .ok_or("Documents introuvable")?
+        .join("Lumen")
+        .join("shared-textures");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    Ok(dir)
+}
+
+fn texture_dirs() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
     if let Some(pics) = dirs::picture_dir() {
         candidates.push(pics.join("textures"));
@@ -37,7 +46,14 @@ pub fn textures_root() -> Option<PathBuf> {
         candidates.push(home.join("OneDrive").join("Images").join("textures"));
         candidates.push(home.join("Pictures").join("textures"));
     }
-    candidates.into_iter().find(|p| p.exists())
+    if let Some(docs) = dirs::document_dir() {
+        candidates.push(docs.join("Lumen").join("shared-textures"));
+    }
+    candidates.into_iter().filter(|path| path.is_dir()).collect()
+}
+
+pub fn textures_root() -> Option<PathBuf> {
+    texture_dirs().into_iter().next()
 }
 
 fn meta_path() -> Result<PathBuf, String> {
@@ -135,7 +151,7 @@ fn patch_cache(id_or_code: &str, patch: impl FnOnce(&mut BankItem)) {
     }
 }
 
-fn clear_cache() {
+pub(crate) fn clear_cache() {
     *lock_cache() = None;
     if let Ok(path) = snapshot_path() {
         let _ = fs::remove_file(path);
@@ -194,17 +210,6 @@ fn file_stamp(path: &Path) -> String {
         .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
         .map(|d| d.as_secs().to_string())
         .unwrap_or_else(|| "0".into())
-}
-
-fn rel_key(root: &Path, path: &Path) -> String {
-    path.strip_prefix(root)
-        .map(|p| p.to_string_lossy().replace('\\', "/"))
-        .unwrap_or_else(|_| {
-            path.file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("texture")
-                .into()
-        })
 }
 
 fn next_tex_code(meta: &CatalogMeta) -> String {
@@ -277,12 +282,24 @@ fn scan_textures() -> Result<Vec<BankItem>, String> {
     let mut changed = false;
     let mut items = Vec::new();
 
-    if let Some(root) = textures_root() {
-        let mut files = Vec::new();
-        collect_images(&root, &mut files, 0);
-        files.sort();
-        for path in files {
-            let key = rel_key(&root, &path);
+    let dirs = texture_dirs();
+    let mut files = Vec::new();
+    for root in &dirs {
+        collect_images(root, &mut files, 0);
+    }
+    files.sort();
+    files.dedup();
+    for path in files {
+        let key = dirs
+            .iter()
+            .find_map(|root| path.strip_prefix(root).ok())
+            .map(|rel| rel.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("texture")
+                    .to_string()
+            });
             if !meta.items.contains_key(&key) {
                 let code = next_tex_code(&meta);
                 meta.items.insert(
@@ -320,7 +337,6 @@ fn scan_textures() -> Result<Vec<BankItem>, String> {
                 hash: String::new(),
                 shared: false,
             });
-        }
     }
 
     for (key, entry) in &meta.items {

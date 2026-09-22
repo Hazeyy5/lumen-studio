@@ -90,6 +90,8 @@ pub fn run() {
             studio::bind_open_place,
             studio::install_studio_plugin,
             bank::list_bank,
+            bank::bank_counts,
+            bank::bank_page,
             bank::read_lumen_file,
             bank::save_mesh_preview,
             bank::export_lumen_bank,
