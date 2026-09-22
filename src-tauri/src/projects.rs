@@ -394,7 +394,7 @@ pub fn write_rbxts_layout(dir: &Path) -> Result<(), String> {
 
     fs::write(
         dir.join(".gitignore"),
-        "node_modules\nout\ninclude\n.lumen-swarm.json\n",
+        "node_modules\nout\ninclude\n.lumen-swarm.json\n.lumen.json\n",
     )
     .map_err(|e| e.to_string())?;
 
@@ -580,7 +580,7 @@ fn chrono_like_now() -> String {
         .unwrap_or_else(|_| "0".into())
 }
 
-fn slugify(name: &str) -> String {
+pub(crate) fn slugify(name: &str) -> String {
     name.chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() {

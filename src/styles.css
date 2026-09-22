@@ -601,6 +601,22 @@ input:focus, textarea:focus, select:focus { border-color: var(--copper); }
   position: relative;
 }
 
+.share-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 4px 0 8px;
+}
+.share-bar input {
+  min-width: 180px;
+  flex: 1;
+}
+.share-bar .lede {
+  flex-basis: 100%;
+  margin: 0;
+}
+
 .studio-head {
   display: flex;
   align-items: center;

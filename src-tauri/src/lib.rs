@@ -8,6 +8,7 @@ mod catalog;
 mod compiler;
 mod keys;
 mod oauth;
+mod collab;
 mod projects;
 mod publish;
 mod review;
@@ -57,6 +58,11 @@ pub fn run() {
             oauth::logout_roblox,
             projects::list_projects,
             projects::create_project,
+            collab::project_share_status,
+            collab::share_project,
+            collab::push_project,
+            collab::pull_project,
+            collab::join_project,
             projects::open_project_dir,
             projects::set_reference_projects,
             agents::detect_agents,

@@ -10,6 +10,13 @@ export type RobloxUser = {
 
 export type AgentKind = "claude" | "codex" | "cursor" | "antigravity";
 
+export type ProjectShare = {
+  shared: boolean;
+  remote: string;
+  dirty: boolean;
+  detail: string;
+};
+
 export type Project = {
   name: string;
   path: string;

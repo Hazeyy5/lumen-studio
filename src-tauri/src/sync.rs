@@ -83,7 +83,7 @@ fn http() -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| e.to_string())
 }
 
-fn github_token() -> Option<String> {
+pub(crate) fn github_token() -> Option<String> {
     if let Ok(keys) = load_keys() {
         let t = keys.bank_sync_token.trim();
         if !t.is_empty() {

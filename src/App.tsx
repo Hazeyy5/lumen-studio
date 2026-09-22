@@ -22,6 +22,7 @@ import type {
   LiveAgent,
   PlaceOffer,
   Project,
+  ProjectShare,
   RobloxUser,
   RojoStatus,
   StartedAgent,
@@ -459,6 +460,125 @@ function displayPath(path: string) {
   return `…${sep}${parts.slice(-3).join(sep)}`;
 }
 
+function JoinProject({
+  busy,
+  setBusy,
+  setErr,
+  onJoined,
+}: {
+  busy: boolean;
+  setBusy: (busy: boolean) => void;
+  setErr: (err: string) => void;
+  onJoined: (project: Project) => Promise<void>;
+}) {
+  const [repo, setRepo] = useState("");
+  return (
+    <>
+      <input
+        type="text"
+        placeholder="Rejoindre — pseudo/lumen-nom-du-jeu"
+        value={repo}
+        onChange={(event) => setRepo(event.target.value)}
+      />
+      <button
+        className="btn secondary"
+        type="button"
+        disabled={busy || !repo.trim()}
+        onClick={async () => {
+          setBusy(true);
+          setErr("");
+          try {
+            const project = await invoke<Project>("join_project", { repo: repo.trim() });
+            setRepo("");
+            await onJoined(project);
+          } catch (error) {
+            setErr(String(error));
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        Rejoindre
+      </button>
+    </>
+  );
+}
+
+function ProjectShareBar({ path }: { path: string }) {
+  const [share, setShare] = useState<ProjectShare | null>(null);
+  const [friend, setFriend] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    setNote("");
+    void invoke<ProjectShare>("project_share_status", { projectPath: path })
+      .then((next) => {
+        if (alive) setShare(next);
+      })
+      .catch((error) => {
+        if (alive) setNote(String(error));
+      });
+    return () => {
+      alive = false;
+    };
+  }, [path]);
+
+  async function run(command: "share_project" | "push_project" | "pull_project") {
+    setBusy(true);
+    setNote("");
+    try {
+      const next = await invoke<ProjectShare>(
+        command,
+        command === "share_project"
+          ? { projectPath: path, friend: friend.trim() || null }
+          : { projectPath: path },
+      );
+      setShare(next);
+      setNote(next.detail);
+      if (command === "share_project") setFriend("");
+    } catch (error) {
+      setNote(String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="share-bar">
+      {share?.shared ? (
+        <>
+          <strong>À deux</strong>
+          <span className="lede">{share.remote}</span>
+          <button className="btn secondary" type="button" disabled={busy} onClick={() => void run("pull_project")}>
+            Recevoir
+          </button>
+          <button className="btn copper" type="button" disabled={busy} onClick={() => void run("push_project")}>
+            Envoyer
+          </button>
+        </>
+      ) : (
+        <>
+          <input
+            type="text"
+            placeholder="Pseudo GitHub de ton ami (optionnel)"
+            value={friend}
+            onChange={(event) => setFriend(event.target.value)}
+          />
+          <button className="btn copper" type="button" disabled={busy} onClick={() => void run("share_project")}>
+            Partager le projet
+          </button>
+        </>
+      )}
+      <p className="lede">
+        {note ||
+          "Un seul des deux envoie vers Studio. L’autre reçoit les fichiers, puis peut relancer la sync."}
+      </p>
+    </div>
+  );
+}
+
 function Projects({
   projects,
   current,
@@ -507,6 +627,7 @@ function Projects({
         >
           Nouveau projet
         </button>
+        <JoinProject busy={busy} setBusy={setBusy} setErr={setErr} onJoined={onCreated} />
       </div>
       {err ? <p className="err">{err}</p> : null}
       {projects.length === 0 ? (
@@ -1251,6 +1372,7 @@ function Studio({
         })}
       </div>
       </div>
+      <ProjectShareBar path={project.path} />
       {syncErr ? <p className="sync-error">{syncErr}</p> : null}
       {rojo?.serving ? (
         <div className="place-banner compact">
