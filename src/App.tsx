@@ -93,16 +93,28 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void check()
-        .then((update) => {
-          if (!cancelled && update) setAppUpdate(update);
-        })
-        .catch(() => undefined);
-    }, 2500);
+    let checking = false;
+    async function lookForUpdate() {
+      if (cancelled || checking) return;
+      checking = true;
+      try {
+        const update = await check();
+        if (!cancelled && update) setAppUpdate(update);
+      } catch {
+        /* hors ligne : on réessaie au prochain passage */
+      } finally {
+        checking = false;
+      }
+    }
+    const first = window.setTimeout(() => void lookForUpdate(), 1500);
+    const poll = window.setInterval(() => void lookForUpdate(), 30_000);
+    const onFocus = () => void lookForUpdate();
+    window.addEventListener("focus", onFocus);
     return () => {
       cancelled = true;
-      window.clearTimeout(timer);
+      window.clearTimeout(first);
+      window.clearInterval(poll);
+      window.removeEventListener("focus", onFocus);
     };
   }, []);
 
@@ -1830,8 +1842,8 @@ function Settings({
       <div className="card" style={{ maxWidth: 640, marginBottom: 24 }}>
         <h2 style={{ fontSize: 20 }}>Mises à jour</h2>
         <p className="lede" style={{ marginBottom: 12 }}>
-          Lumen vérifie GitHub au démarrage. Ton ami installe le .exe une fois, puis
-          les versions suivantes s’installent d’ici.
+          Lumen vérifie GitHub à l’ouverture, puis toutes les 30 secondes tant que l’app est ouverte.
+          Ton ami installe le .exe une fois, puis les versions suivantes s’installent d’ici.
         </p>
         <div className="row">
           <button className="btn secondary" type="button" disabled={updateBusy} onClick={() => void onCheckUpdate()}>
