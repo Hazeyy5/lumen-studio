@@ -219,11 +219,16 @@ fn overlay_meta(items: &mut [BankItem], meta: &CatalogMeta) {
             if !entry.code.is_empty() {
                 item.code = entry.code.clone();
             }
-            item.roblox_asset_id = entry.roblox_asset_id.clone();
-            item.preview_path = entry
-                .preview_path
-                .clone()
-                .filter(|p| Path::new(p).is_file());
+            if entry
+                .roblox_asset_id
+                .as_ref()
+                .is_some_and(|id| !id.trim().is_empty())
+            {
+                item.roblox_asset_id = entry.roblox_asset_id.clone();
+            }
+            if let Some(preview) = entry.preview_path.clone().filter(|p| Path::new(p).is_file()) {
+                item.preview_path = Some(preview);
+            }
         }
     }
 }
@@ -313,6 +318,7 @@ fn ensure_vibestarter(force: bool) -> Result<(), String> {
         if let Ok(meta) = load_meta() {
             overlay_meta(&mut items, &meta);
         }
+        let _ = apply_remote_codes(&mut items);
         *lock_cache() = Some(items);
         return Ok(());
     }
@@ -327,6 +333,7 @@ fn ensure_vibestarter(force: bool) -> Result<(), String> {
     if items.is_empty() {
         return Ok(());
     }
+    let _ = apply_remote_codes(&mut items);
     save_snapshot(&items);
     *lock_cache() = Some(items);
     Ok(())
@@ -393,6 +400,111 @@ fn fetch_remote_vibestarter() -> Result<Vec<BankItem>, String> {
     }
     items.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(items)
+}
+
+fn vs_number(code: &str) -> Option<u32> {
+    code.trim()
+        .strip_prefix("VS-")
+        .or_else(|| code.trim().strip_prefix("vs-"))
+        .and_then(|s| s.parse().ok())
+}
+
+fn apply_remote_codes(items: &mut [BankItem]) -> Result<(), String> {
+    if !items
+        .iter()
+        .any(|item| item.path.starts_with("https://") || item.path.starts_with("http://"))
+    {
+        return Ok(());
+    }
+    let mut meta = load_meta()?;
+    let mut max = meta
+        .items
+        .values()
+        .filter_map(|entry| vs_number(&entry.code))
+        .max()
+        .unwrap_or(0);
+    for item in items.iter() {
+        if let Some(n) = vs_number(&item.code) {
+            max = max.max(n);
+        }
+    }
+    let mut changed = false;
+    for item in items.iter_mut() {
+        if !(item.path.starts_with("https://") || item.path.starts_with("http://")) {
+            continue;
+        }
+        let key = item.id.strip_prefix("vs:").unwrap_or(&item.id).to_string();
+        if let Some(entry) = meta.items.get(&key) {
+            if vs_number(&entry.code).is_some() {
+                item.code = entry.code.clone();
+                continue;
+            }
+        }
+        max += 1;
+        let code = format!("VS-{max:04}");
+        meta.items.insert(
+            key,
+            CatalogEntry {
+                code: code.clone(),
+                roblox_asset_id: item.roblox_asset_id.clone(),
+                preview_path: None,
+            },
+        );
+        item.code = code;
+        changed = true;
+    }
+    if changed {
+        save_meta(&meta)?;
+    }
+    Ok(())
+}
+
+pub fn materialize(item: &BankItem) -> Result<BankItem, String> {
+    if !item.path.starts_with(REMOTE_VIBE_BASE) {
+        return Ok(item.clone());
+    }
+    let rel = item
+        .id
+        .strip_prefix("vs:")
+        .and_then(|rest| rest.split_once(':').map(|(_, rel)| rel))
+        .unwrap_or("")
+        .replace('\\', "/");
+    if rel.is_empty() || rel.contains("..") || rel.starts_with('/') {
+        return Err("Chemin distant invalide".into());
+    }
+    let dest = dirs::document_dir()
+        .ok_or("Documents introuvable")?
+        .join("Lumen")
+        .join("vibe-cache")
+        .join(rel);
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    if !dest.is_file() {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(180))
+            .user_agent("Lumen/0.1")
+            .build()
+            .map_err(|e| e.to_string())?;
+        let response = client
+            .get(&item.path)
+            .send()
+            .map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("Téléchargement impossible : HTTP {}", response.status()));
+        }
+        let bytes = response.bytes().map_err(|e| e.to_string())?;
+        if bytes.is_empty() {
+            return Err("Fichier distant vide".into());
+        }
+        fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
+    }
+    let mut local = item.clone();
+    local.path = dest.to_string_lossy().into();
+    if local.kind == "image" {
+        local.preview_path = Some(local.path.clone());
+    }
+    Ok(local)
 }
 
 pub fn with_vibestarter<R>(force: bool, f: impl FnOnce(&[BankItem]) -> R) -> Result<R, String> {

@@ -73,6 +73,8 @@ pub fn try_publish(id_or_code: &str) -> (Option<String>, Option<String>) {
 }
 
 fn publish_item(item: &BankItem) -> Result<PublishResult, String> {
+    let item = crate::catalog::materialize(item)?;
+    let item = &item;
     let keys = load_keys()?;
     let auths = publish_auths(&keys)?;
     if item.path.trim().is_empty() || !Path::new(&item.path).is_file() {
