@@ -42,6 +42,9 @@ async function blobUrlFromDisk(path: string) {
 
 async function resolveModelUrl(path: string) {
   if (path.startsWith("https://") || path.startsWith("http://")) {
+    const local = await invoke<string>("cache_remote_asset", { url: path });
+    const url = convertFileSrc(local);
+    if (url) return { url, revoke: false };
     return { url: path, revoke: false };
   }
   const url = convertFileSrc(path);
@@ -162,7 +165,7 @@ export function MeshPreview({
     return <div className={`${className} mesh-skel`}>Aperçu indisponible</div>;
   }
   if (!src) {
-    return <div className={`${className} mesh-skel`} />;
+    return <div className={`${className} mesh-skel mesh-loading`}>Chargement du modèle…</div>;
   }
   return (
     <model-viewer

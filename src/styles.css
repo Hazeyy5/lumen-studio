@@ -712,6 +712,12 @@ input:focus, textarea:focus, select:focus { border-color: var(--copper); }
   background-size: 160% 100%;
   animation: mesh-skel 1.2s ease-in-out infinite;
 }
+.mesh-loading {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 14px;
+}
 @keyframes mesh-skel {
   0% { background-position: 100% 0; }
   100% { background-position: -60% 0; }

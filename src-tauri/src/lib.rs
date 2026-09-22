@@ -98,6 +98,7 @@ pub fn run() {
             bank::import_lumen_bank,
             sync::sync_shared_bank,
             catalog::list_vibestarter_bank,
+            catalog::cache_remote_asset,
             textures::list_textures_bank,
             textures::add_studio_texture,
             textures::import_studio_textures,

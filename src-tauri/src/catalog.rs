@@ -459,46 +459,62 @@ fn apply_remote_codes(items: &mut [BankItem]) -> Result<(), String> {
     Ok(())
 }
 
-pub fn materialize(item: &BankItem) -> Result<BankItem, String> {
-    if !item.path.starts_with(REMOTE_VIBE_BASE) {
-        return Ok(item.clone());
+fn cache_remote_url(url: &str) -> Result<PathBuf, String> {
+    let prefix = format!("{REMOTE_VIBE_BASE}/vibe/");
+    if !url.starts_with(&prefix) {
+        return Err("Adresse d’asset refusée".into());
     }
-    let rel = item
-        .id
-        .strip_prefix("vs:")
-        .and_then(|rest| rest.split_once(':').map(|(_, rel)| rel))
-        .unwrap_or("")
-        .replace('\\', "/");
-    if rel.is_empty() || rel.contains("..") || rel.starts_with('/') {
+    let rel = url[prefix.len()..]
+        .split('/')
+        .map(|part| {
+            urlencoding::decode(part)
+                .map(|value| value.into_owned())
+                .unwrap_or_else(|_| part.to_string())
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+    if rel.is_empty() || rel.contains("..") || rel.starts_with('/') || rel.contains('\0') {
         return Err("Chemin distant invalide".into());
     }
     let dest = dirs::document_dir()
         .ok_or("Documents introuvable")?
         .join("Lumen")
         .join("vibe-cache")
-        .join(rel);
+        .join(&rel);
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    if !dest.is_file() {
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(180))
-            .user_agent("Lumen/0.1")
-            .build()
-            .map_err(|e| e.to_string())?;
-        let response = client
-            .get(&item.path)
-            .send()
-            .map_err(|e| e.to_string())?;
-        if !response.status().is_success() {
-            return Err(format!("Téléchargement impossible : HTTP {}", response.status()));
-        }
-        let bytes = response.bytes().map_err(|e| e.to_string())?;
-        if bytes.is_empty() {
-            return Err("Fichier distant vide".into());
-        }
-        fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
+    if dest.is_file() {
+        return Ok(dest);
     }
+    let client = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .user_agent("Lumen/0.1")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client.get(url).send().map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("Téléchargement impossible : HTTP {}", response.status()));
+    }
+    let bytes = response.bytes().map_err(|e| e.to_string())?;
+    if bytes.is_empty() {
+        return Err("Fichier distant vide".into());
+    }
+    fs::write(&dest, &bytes).map_err(|e| e.to_string())?;
+    Ok(dest)
+}
+
+#[tauri::command]
+pub fn cache_remote_asset(url: String) -> Result<String, String> {
+    let dest = cache_remote_url(url.trim())?;
+    Ok(dest.to_string_lossy().into())
+}
+
+pub fn materialize(item: &BankItem) -> Result<BankItem, String> {
+    if !item.path.starts_with(REMOTE_VIBE_BASE) {
+        return Ok(item.clone());
+    }
+    let dest = cache_remote_url(&item.path)?;
     let mut local = item.clone();
     local.path = dest.to_string_lossy().into();
     if local.kind == "image" {

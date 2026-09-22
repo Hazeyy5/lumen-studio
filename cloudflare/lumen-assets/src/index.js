@@ -1,5 +1,21 @@
+const CORS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, HEAD, OPTIONS",
+  "access-control-allow-headers": "range",
+  "access-control-expose-headers": "etag, content-length, content-type",
+};
+
+function withCors(response) {
+  const headers = new Headers(response.headers);
+  for (const [name, value] of Object.entries(CORS)) headers.set(name, value);
+  return new Response(response.body, { status: response.status, headers });
+}
+
 export default {
   async fetch(request, env) {
+    if (request.method === "OPTIONS") {
+      return new Response(null, { status: 204, headers: CORS });
+    }
     const url = new URL(request.url);
     const key = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
     if (!key || key.includes("..")) {
@@ -26,7 +42,7 @@ export default {
       object.writeHttpMetadata(headers);
       headers.set("etag", object.httpEtag);
       headers.set("cache-control", "public, max-age=86400");
-      return new Response(request.method === "HEAD" ? null : object.body, { headers });
+      return withCors(new Response(request.method === "HEAD" ? null : object.body, { headers }));
     }
 
     return new Response("Méthode refusée", { status: 405 });
