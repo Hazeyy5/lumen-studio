@@ -24,6 +24,15 @@ struct CatalogEntry {
 }
 
 pub fn vibestarter_root() -> Option<PathBuf> {
+    if let Ok(keys) = crate::keys::load_keys() {
+        let custom = keys.vibe_assets_path.trim();
+        if !custom.is_empty() {
+            let path = PathBuf::from(custom);
+            if path.is_dir() {
+                return Some(path);
+            }
+        }
+    }
     let mut candidates = Vec::new();
     if let Some(docs) = dirs::document_dir() {
         candidates.push(docs.join("AssetsDownloader").join("vibestarter_assets"));
@@ -216,7 +225,7 @@ fn patch_cache(id_or_code: &str, patch: impl FnOnce(&mut BankItem)) {
     }
 }
 
-fn clear_catalog_cache() {
+pub fn clear_catalog_cache() {
     *lock_cache() = None;
     if let Ok(path) = snapshot_path() {
         let _ = fs::remove_file(path);
@@ -264,6 +273,8 @@ fn scan_vibestarter() -> Result<Vec<BankItem>, String> {
             code: entry.code,
             scale_type: None,
             tile_size: None,
+            hash: String::new(),
+            shared: false,
         });
     }
 

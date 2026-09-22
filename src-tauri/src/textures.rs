@@ -267,6 +267,8 @@ fn studio_item_from_entry(key: &str, entry: &CatalogEntry) -> BankItem {
         code: entry.code.clone(),
         scale_type: entry.scale_type.clone(),
         tile_size: entry.tile_size.clone(),
+        hash: String::new(),
+        shared: false,
     }
 }
 
@@ -315,6 +317,8 @@ fn scan_textures() -> Result<Vec<BankItem>, String> {
                 code: entry.code,
                 scale_type: None,
                 tile_size: None,
+                hash: String::new(),
+                shared: false,
             });
         }
     }
@@ -369,6 +373,17 @@ pub fn list_textures_bank(force: Option<bool>) -> Result<Vec<BankItem>, String> 
         clear_cache();
     }
     list_textures_inner(force)
+}
+
+pub fn merge_catalog_json(bytes: &[u8]) -> Result<(), String> {
+    let incoming: CatalogMeta = serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+    let mut meta = load_meta()?;
+    for (key, entry) in incoming.items {
+        meta.items.entry(key).or_insert(entry);
+    }
+    save_meta(&meta)?;
+    clear_cache();
+    Ok(())
 }
 
 pub fn get_item(id_or_code: &str) -> Result<BankItem, String> {

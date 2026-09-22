@@ -19,6 +19,16 @@ pub struct Keys {
     pub roblox_oauth_client_id: String,
     #[serde(default)]
     pub blender_path: String,
+    #[serde(default)]
+    pub vibe_assets_path: String,
+    #[serde(default = "default_share_bank")]
+    pub share_bank: bool,
+    #[serde(default)]
+    pub bank_sync_token: String,
+}
+
+fn default_share_bank() -> bool {
+    true
 }
 
 fn default_mesh_provider() -> String {
@@ -38,6 +48,7 @@ pub fn load_keys() -> Result<Keys, String> {
     if !path.exists() {
         return Ok(Keys {
             mesh_provider: "meshy".into(),
+            share_bank: true,
             ..Keys::default()
         });
     }
@@ -58,5 +69,7 @@ pub fn get_keys() -> Result<Keys, String> {
 
 #[tauri::command]
 pub fn set_keys(keys: Keys) -> Result<(), String> {
-    save_keys(keys)
+    save_keys(keys)?;
+    crate::catalog::clear_catalog_cache();
+    Ok(())
 }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -30,9 +30,6 @@ import type {
   ToolchainStatus,
   View,
 } from "./types";
-
-const OAUTH_REDIRECT = "http://localhost:17421/callback";
-const OAUTH_APPS = "https://create.roblox.com/dashboard/credentials?activeTab=OAuthTab";
 
 function isGenericPlaceName(name?: string | null) {
   const n = (name ?? "").trim();
@@ -70,6 +67,9 @@ const EMPTY_KEYS: Keys = {
   robloxUserId: "",
   robloxOauthClientId: "",
   blenderPath: "",
+  vibeAssetsPath: "",
+  shareBank: true,
+  bankSyncToken: "",
 };
 
 export default function App() {
@@ -170,12 +170,28 @@ export default function App() {
     if (view === "bank") setBankSeen(true);
   }, [view]);
 
+  const updateBar = appUpdate ? (
+    <button
+      type="button"
+      className={`update-banner${updateBusy ? " busy" : ""}`}
+      disabled={updateBusy}
+      onClick={() => void installAppUpdate()}
+    >
+      {updateBusy
+        ? updateMsg || "Installation…"
+        : `Une mise à jour est disponible${appUpdate.version ? ` · v${appUpdate.version}` : ""} — cliquer pour installer`}
+    </button>
+  ) : null;
+
   if (!authReady) {
     return (
-      <div className="login-screen">
-        <div className="login-card">
-          <strong>Lumen</strong>
-          <p>Chargement…</p>
+      <div className="app-root">
+        {updateBar}
+        <div className="login-screen">
+          <div className="login-card">
+            <strong>Lumen</strong>
+            <p>Chargement…</p>
+          </div>
         </div>
       </div>
     );
@@ -183,21 +199,24 @@ export default function App() {
 
   if (!robloxUser) {
     return (
-      <Login
-        keys={keys}
-        error={error}
-        theme={theme}
-        onToggleTheme={() => setTheme((t) => toggleTheme(t))}
-        onKeys={setKeys}
-        onLoggedIn={async (user) => {
-          setRobloxUser(user);
-          await refresh();
-        }}
-      />
+      <div className="app-root">
+        {updateBar}
+        <Login
+          error={error}
+          theme={theme}
+          onToggleTheme={() => setTheme((t) => toggleTheme(t))}
+          onLoggedIn={async (user) => {
+            setRobloxUser(user);
+            await refresh();
+          }}
+        />
+      </div>
     );
   }
 
   return (
+    <div className="app-root">
+      {updateBar}
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
@@ -241,22 +260,6 @@ export default function App() {
         </header>
         <section className={`main ${view === "studio" ? "main-fill" : ""}`}>
         {error ? <p className="err">{error}</p> : null}
-        {appUpdate ? (
-          <div className="update-banner">
-            <span>
-              Lumen {appUpdate.version} est disponible.
-              {updateMsg ? ` ${updateMsg}` : ""}
-            </span>
-            <button
-              className="btn copper"
-              type="button"
-              disabled={updateBusy}
-              onClick={() => void installAppUpdate()}
-            >
-              {updateBusy ? "Mise à jour…" : "Installer"}
-            </button>
-          </div>
-        ) : null}
         {view === "projects" && (
           <Projects
             projects={projects}
@@ -314,6 +317,7 @@ export default function App() {
         </section>
       </div>
       <AssetReviewHost />
+    </div>
     </div>
   );
 }
@@ -387,31 +391,18 @@ function AccountMenu({
 }
 
 function Login({
-  keys,
   error,
   theme,
   onToggleTheme,
-  onKeys,
   onLoggedIn,
 }: {
-  keys: Keys;
   error: string;
   theme: Theme;
   onToggleTheme: () => void;
-  onKeys: (keys: Keys) => void;
   onLoggedIn: (user: RobloxUser) => Promise<void>;
 }) {
-  const [clientId, setClientId] = useState(keys.robloxOauthClientId);
-  const [showClient, setShowClient] = useState(!keys.robloxOauthClientId.trim());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(error);
-
-  async function saveClientId() {
-    const next = { ...keys, robloxOauthClientId: clientId.trim() };
-    await invoke("set_keys", { keys: next });
-    onKeys(next);
-    return next;
-  }
 
   return (
     <div className="login-screen">
@@ -420,50 +411,15 @@ function Login({
         <h1>Connecte-toi avec Roblox.</h1>
         <p>
           Lumen ouvre la page officielle Roblox. Ton mot de passe reste chez eux — on ne
-          conserve qu’un jeton OAuth.
+          conserve qu’un jeton. Rien à créer : c’est la même app pour tout le monde.
         </p>
-        {showClient ? (
-          <>
-            <label>
-              Client ID OAuth (une seule fois)
-              <input
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                placeholder="Créé dans le Creator Dashboard"
-              />
-            </label>
-            <small>
-              App OAuth <strong>privée, non publiée</strong> — ignore « Réviser et publier ».
-              Catégorie Creation &amp; Productivity. Permissions : <code>openid</code>,{" "}
-              <code>profile</code>, <code>asset:read</code>, <code>asset:write</code>. Redirect
-              URI exact : <code>{OAUTH_REDIRECT}</code>.
-            </small>
-            <div className="row">
-              <button className="btn secondary" type="button" onClick={() => void openUrl(OAUTH_APPS)}>
-                Ouvrir le Dashboard
-              </button>
-              <button
-                className="btn secondary"
-                type="button"
-                onClick={() => void navigator.clipboard.writeText(OAUTH_REDIRECT)}
-              >
-                Copier l’URI
-              </button>
-            </div>
-          </>
-        ) : (
-          <button className="text-link" type="button" onClick={() => setShowClient(true)}>
-            Modifier le Client ID
-          </button>
-        )}
         <button
           className="btn copper"
-          disabled={busy || !clientId.trim()}
+          disabled={busy}
           onClick={async () => {
             setBusy(true);
             setErr("");
             try {
-              await saveClientId();
               const user = await invoke<RobloxUser>("start_roblox_login");
               await onLoggedIn(user);
             } catch (error) {
@@ -1734,6 +1690,46 @@ box.data.materials.append(mat)
   );
 }
 
+function VibePathField({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (path: string) => void;
+}) {
+  return (
+    <label>
+      Dossier VibeStarter (optionnel)
+      <div className="row" style={{ gap: 8 }}>
+        <input
+          type="text"
+          value={value}
+          placeholder="Documents\AssetsDownloader\vibestarter_assets"
+          onChange={(e) => onChange(e.target.value)}
+          style={{ flex: 1 }}
+        />
+        <button
+          type="button"
+          className="btn secondary"
+          onClick={async () => {
+            const picked = await open({
+              directory: true,
+              multiple: false,
+            });
+            if (typeof picked === "string" && picked) onChange(picked);
+          }}
+        >
+          Parcourir
+        </button>
+      </div>
+      <small className="lede" style={{ marginTop: 6, display: "block" }}>
+        VibeStarter ne met pas le pack dans le cloud : chaque PC a les mêmes fichiers en local.
+        Copie le dossier (~9 Go) via USB ou OneDrive, puis Enregistrer. Laisse vide pour le chemin par défaut.
+      </small>
+    </label>
+  );
+}
+
 function BlenderPathField({
   value,
   onChange,
@@ -1821,7 +1817,7 @@ function Settings({
       ["meshy", "Clé API Meshy", "modèles 3D texturés"],
       ["tripo", "Clé API Tripo", "alternative 3D"],
       ["cursor", "Clé API Cursor", "agent Cursor embarqué"],
-      ["robloxOauthClientId", "Client ID OAuth Roblox", "connexion Compte Roblox"],
+      ["robloxOauthClientId", "Client ID OAuth Roblox", "vide = l’app Lumen, déjà incluse"],
       ["robloxApiKey", "Clé Open Cloud Roblox", "secours si l’OAuth n’a pas asset:write"],
       ["robloxUserId", "UserId Roblox", "ton identifiant créateur"],
     ] as const,
@@ -1851,8 +1847,8 @@ function Settings({
       </div>
       <p className="lede">
         Claude Code, Codex et Antigravity se connectent avec leur propre compte (login officiel).
-        La connexion Lumen passe par OAuth Roblox (ajoute <code>asset:read</code> et{" "}
-        <code>asset:write</code> à l’app, puis reconnecte-toi pour publier). Cursor, Gemini et
+        La connexion Roblox est déjà dans l’app : chacun clique et se connecte avec son compte.
+        Cursor, Gemini et
         Meshy/Tripo restent des clés collées ici. Blender tourne en local, sans clé. Rien n’est
         revendu.
       </p>
@@ -1902,6 +1898,36 @@ function Settings({
             value={form.blenderPath}
             onChange={(blenderPath) => setForm({ ...form, blenderPath })}
           />
+        ) : null}
+        <VibePathField
+          value={form.vibeAssetsPath}
+          onChange={(vibeAssetsPath) => setForm({ ...form, vibeAssetsPath })}
+        />
+        <label className="row" style={{ gap: 10, alignItems: "center" }}>
+          <input
+            type="checkbox"
+            checked={form.shareBank}
+            onChange={(e) => setForm({ ...form, shareBank: e.target.checked })}
+          />
+          <span>
+            Banque Lumen partagée
+            <small className="lede" style={{ display: "block", marginTop: 4 }}>
+              Comme VibeStarter : un nouvel icône ou mesh rejoint le catalogue commun, les autres
+              Lumen le reçoivent. Désactive si tu veux rester uniquement en local. Le pack
+              VibeStarter (~9 Go) reste le leur, on ne le republie pas.
+            </small>
+          </span>
+        </label>
+        {form.shareBank ? (
+          <label>
+            Jeton GitHub (optionnel, pour envoyer tes ajouts)
+            <input
+              type="password"
+              value={form.bankSyncToken}
+              placeholder="sinon Lumen utilise `gh auth token` s’il est connecté"
+              onChange={(e) => setForm({ ...form, bankSyncToken: e.target.value })}
+            />
+          </label>
         ) : null}
         <div className="row">
           <button
@@ -2074,6 +2100,16 @@ function Bank() {
   const pageSize = 48;
 
   async function refresh(force = false) {
+    try {
+      const sync = await invoke<{ pulled: number; pushed: number; message: string }>(
+        "sync_shared_bank",
+      ).catch(() => null);
+      if (sync && (sync.pulled > 0 || sync.pushed > 0)) {
+        setErr(sync.message);
+      }
+    } catch {
+      /* hors-ligne : on affiche la banque locale */
+    }
     const [lumen, vibe, textures] = await Promise.all([
       invoke<BankItem[]>("list_bank"),
       invoke<BankItem[]>("list_vibestarter_bank", { force }).catch(() => [] as BankItem[]),
@@ -2194,25 +2230,79 @@ function Bank() {
       </div>
       <div className="toolbar">
         {shelf === "lumen" ? (
-          <button
-            className="btn secondary"
-            disabled={busy}
-            onClick={async () => {
-              const selected = await open({
-                multiple: true,
-                filters: [
-                  { name: "Assets", extensions: ["png", "jpg", "jpeg", "webp", "glb", "gltf", "fbx", "ogg", "mp3"] },
-                ],
-              });
-              const paths = Array.isArray(selected) ? selected : selected ? [selected] : [];
-              for (const filePath of paths) {
-                await invoke("import_to_bank", { filePath, source: "import" });
-              }
-              await refresh();
-            }}
-          >
-            Importer
-          </button>
+          <>
+            <button
+              className="btn secondary"
+              disabled={busy}
+              onClick={async () => {
+                const selected = await open({
+                  multiple: true,
+                  filters: [
+                    { name: "Assets", extensions: ["png", "jpg", "jpeg", "webp", "glb", "gltf", "fbx", "ogg", "mp3"] },
+                  ],
+                });
+                const paths = Array.isArray(selected) ? selected : selected ? [selected] : [];
+                for (const filePath of paths) {
+                  await invoke("import_to_bank", { filePath, source: "import" });
+                }
+                await refresh();
+              }}
+            >
+              Importer
+            </button>
+            <button
+              className="btn secondary"
+              disabled={busy}
+              onClick={async () => {
+                const dest = await save({
+                  defaultPath: "lumen-bank.zip",
+                  filters: [{ name: "Pack Lumen", extensions: ["zip"] }],
+                });
+                if (typeof dest !== "string" || !dest) return;
+                setBusy(true);
+                setErr("");
+                try {
+                  const count = await invoke<number>("export_lumen_bank", { dest });
+                  setErr(`Pack exporté : ${count} fichier${count > 1 ? "s" : ""} dans ${dest}`);
+                } catch (error) {
+                  setErr(String(error));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Exporter le pack
+            </button>
+            <button
+              className="btn secondary"
+              disabled={busy}
+              onClick={async () => {
+                const selected = await open({
+                  multiple: false,
+                  filters: [{ name: "Pack Lumen", extensions: ["zip"] }],
+                });
+                const source = typeof selected === "string" ? selected : null;
+                if (!source) return;
+                setBusy(true);
+                setErr("");
+                try {
+                  const added = await invoke<number>("import_lumen_bank", { source });
+                  await refresh(true);
+                  setErr(
+                    added
+                      ? `${added} asset${added > 1 ? "s" : ""} importé${added > 1 ? "s" : ""} depuis le pack`
+                      : "Rien de nouveau : ces codes étaient déjà dans la banque.",
+                  );
+                } catch (error) {
+                  setErr(String(error));
+                } finally {
+                  setBusy(false);
+                }
+              }}
+            >
+              Importer un pack
+            </button>
+          </>
         ) : shelf === "textures" ? (
           <span className="bank-pack-meta">Dossier Images/textures · HUD / UI · codes TEX-xxxx</span>
         ) : shelf === "inspiration" ? (
@@ -2271,6 +2361,9 @@ function Bank() {
             <option value="image">Icônes / images</option>
             <option value="mesh">3D</option>
           </select>
+        ) : null}
+        {shelf === "lumen" ? (
+          <span className="bank-pack-meta">Partagée entre tous les Lumen · codes LUM-xxxx</span>
         ) : null}
         {shelf === "inspiration" ? (
           <span className="bank-pack-meta">Pas envoyé sur Roblox · codes INS-xxxx</span>
@@ -2407,10 +2500,10 @@ function Bank() {
           {shelf === "inspiration"
             ? "Importe des captures d’HUD, boutiques ou menus. Dis ensuite à un agent de s’en inspirer — elles ne partent pas sur Roblox."
             : shelf === "lumen"
-            ? "La banque Lumen est vide. Génère dans l’Atelier ou importe un fichier."
+            ? "La banque Lumen est vide. Génère dans l’Atelier : le partage est actif, les autres Lumen verront tes ajouts après synchro. Ou Importer un pack zip."
             : shelf === "textures"
-            ? "Aucune texture. Ajoute des PNG dans Images/textures, importe depuis Studio, ou colle un rbxassetid."
-            : "Aucun asset VibeStarter. Vérifie le dossier AssetsDownloader/vibestarter_assets."}
+            ? "Aucune texture. Ajoute des PNG dans Images/textures (copie le même dossier que sur l’autre PC), importe depuis Studio, ou colle un rbxassetid."
+            : "Aucun asset VibeStarter. Copie le dossier AssetsDownloader/vibestarter_assets (~9 Go, USB ou OneDrive) vers Documents, ou indique le chemin dans Réglages."}
         </div>
       ) : (
         <>

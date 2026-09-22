@@ -37,6 +37,9 @@ export type Keys = {
   robloxUserId: string;
   robloxOauthClientId: string;
   blenderPath: string;
+  vibeAssetsPath: string;
+  shareBank: boolean;
+  bankSyncToken: string;
 };
 
 export type AgentTab = {
@@ -125,6 +128,7 @@ export type BankItem = {
   previewPath?: string | null;
   code?: string;
   scaleType?: string | null;
+  shared?: boolean;
   tileSize?: {
     xScale: number;
     xOffset: number;

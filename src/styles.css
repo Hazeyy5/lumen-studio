@@ -54,8 +54,17 @@ code {
   word-break: break-word;
 }
 
-.app {
+.app-root {
   height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.app {
+  flex: 1;
+  min-height: 0;
+  height: auto;
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
 }
@@ -200,22 +209,33 @@ nav button.active {
 }
 
 .update-banner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--paper-2);
+  flex: 0 0 auto;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 11px 18px;
+  background: var(--copper);
+  color: var(--on-copper);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-align: center;
+  box-shadow: none;
 }
-.update-banner span {
-  font-size: 14px;
+.update-banner:hover:not(:disabled) {
+  background: var(--copper-deep);
+}
+.update-banner:disabled,
+.update-banner.busy {
+  cursor: progress;
+  opacity: 0.92;
 }
 
 .login-screen {
-  min-height: 100%;
+  flex: 1;
+  min-height: 0;
   display: grid;
   place-items: center;
   padding: 32px;

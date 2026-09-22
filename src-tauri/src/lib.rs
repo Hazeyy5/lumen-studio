@@ -14,6 +14,7 @@ mod review;
 mod rojo;
 mod studio;
 mod swarm;
+mod sync;
 mod textures;
 
 use agents::SessionMap;
@@ -91,6 +92,9 @@ pub fn run() {
             bank::list_bank,
             bank::read_lumen_file,
             bank::save_mesh_preview,
+            bank::export_lumen_bank,
+            bank::import_lumen_bank,
+            sync::sync_shared_bank,
             catalog::list_vibestarter_bank,
             textures::list_textures_bank,
             textures::add_studio_texture,

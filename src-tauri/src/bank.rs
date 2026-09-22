@@ -34,9 +34,13 @@ pub struct BankItem {
     pub scale_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tile_size: Option<TileSize>,
+    #[serde(default)]
+    pub hash: String,
+    #[serde(default)]
+    pub shared: bool,
 }
 
-fn bank_root() -> Result<PathBuf, String> {
+pub(crate) fn bank_root() -> Result<PathBuf, String> {
     let dir = dirs::document_dir()
         .ok_or("Documents introuvable")?
         .join("Lumen")
@@ -49,7 +53,7 @@ fn index_path() -> Result<PathBuf, String> {
     Ok(bank_root()?.join("index.json"))
 }
 
-fn load_index() -> Result<Vec<BankItem>, String> {
+pub(crate) fn load_index() -> Result<Vec<BankItem>, String> {
     let path = index_path()?;
     if !path.exists() {
         return Ok(Vec::new());
@@ -125,7 +129,7 @@ fn ensure_codes(items: &mut [BankItem]) -> bool {
     changed
 }
 
-fn save_index(items: &[BankItem]) -> Result<(), String> {
+pub(crate) fn save_index(items: &[BankItem]) -> Result<(), String> {
     let raw = serde_json::to_string_pretty(items).map_err(|e| e.to_string())?;
     fs::write(index_path()?, raw).map_err(|e| e.to_string())
 }
@@ -301,6 +305,7 @@ pub fn import_to_bank(file_path: String, source: Option<String>) -> Result<BankI
         .join("files")
         .join(format!("{id}.{ext}"));
     fs::copy(&src, &dest).map_err(|e| e.to_string())?;
+    let hash = sha256_file(&dest)?;
     let mut items = load_index()?;
     let code = next_code(&items, &source);
     let item = BankItem {
@@ -315,9 +320,12 @@ pub fn import_to_bank(file_path: String, source: Option<String>) -> Result<BankI
         code,
         scale_type: None,
         tile_size: None,
+        hash,
+        shared: false,
     };
     items.push(item.clone());
     save_index(&items)?;
+    crate::sync::queue_push(&item);
     Ok(item)
 }
 
@@ -354,9 +362,12 @@ pub fn add_bytes_to_bank(
         code,
         scale_type: None,
         tile_size: None,
+        hash: sha256_hex(bytes),
+        shared: false,
     };
     items.push(item.clone());
     save_index(&items)?;
+    crate::sync::queue_push(&item);
     Ok(item)
 }
 
@@ -455,6 +466,155 @@ pub fn copy_inspiration_into_project(
     Ok((dest.to_string_lossy().into_owned(), relative))
 }
 
+#[tauri::command]
+pub fn export_lumen_bank(dest: String) -> Result<u32, String> {
+    let root = bank_root()?;
+    let dest_path = PathBuf::from(&dest);
+    if let Some(parent) = dest_path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let file = fs::File::create(&dest_path).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
+    let mut count = 0u32;
+    let index = root.join("index.json");
+    if index.is_file() {
+        zip.start_file("index.json", opts)
+            .map_err(|e| e.to_string())?;
+        std::io::Write::write_all(&mut zip, &fs::read(&index).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    }
+    let files = root.join("files");
+    if files.is_dir() {
+        count += zip_plain_dir(&mut zip, opts, &files, "files")?;
+    }
+    let previews = root.join("previews");
+    if previews.is_dir() {
+        zip_plain_dir(&mut zip, opts, &previews, "previews")?;
+    }
+    if let Some(dir) = dirs::document_dir() {
+        let tex = dir.join("Lumen").join("catalog-textures.json");
+        if tex.is_file() {
+            zip.start_file("catalog-textures.json", opts)
+                .map_err(|e| e.to_string())?;
+            std::io::Write::write_all(&mut zip, &fs::read(&tex).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    zip.finish().map_err(|e| e.to_string())?;
+    Ok(count)
+}
+
+#[tauri::command]
+pub fn import_lumen_bank(source: String) -> Result<u32, String> {
+    let src = PathBuf::from(&source);
+    if !src.is_file() {
+        return Err("Fichier zip introuvable".into());
+    }
+    let file = fs::File::open(&src).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+    let root = bank_root()?;
+    let files_dir = root.join("files");
+    let previews_dir = root.join("previews");
+    fs::create_dir_all(&files_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&previews_dir).map_err(|e| e.to_string())?;
+    let mut incoming: Vec<BankItem> = Vec::new();
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).map_err(|e| e.to_string())?;
+        let name = entry.name().replace('\\', "/");
+        if name.contains("..") {
+            continue;
+        }
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut bytes).map_err(|e| e.to_string())?;
+        if name == "index.json" {
+            incoming = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+        } else if let Some(file_name) = name.strip_prefix("files/") {
+            if file_name.is_empty() || file_name.contains('/') {
+                continue;
+            }
+            let dest = files_dir.join(file_name);
+            if !dest.exists() {
+                fs::write(dest, &bytes).map_err(|e| e.to_string())?;
+            }
+        } else if let Some(file_name) = name.strip_prefix("previews/") {
+            if file_name.is_empty() || file_name.contains('/') {
+                continue;
+            }
+            let dest = previews_dir.join(file_name);
+            if !dest.exists() {
+                fs::write(dest, &bytes).map_err(|e| e.to_string())?;
+            }
+        } else if name == "catalog-textures.json" {
+            crate::textures::merge_catalog_json(&bytes)?;
+        }
+    }
+    let mut items = load_index()?;
+    let existing: std::collections::HashSet<String> = items
+        .iter()
+        .map(|item| item.code.to_ascii_lowercase())
+        .collect();
+    let mut added = 0u32;
+    for mut item in incoming {
+        if existing.contains(&item.code.to_ascii_lowercase()) {
+            continue;
+        }
+        let file_name = Path::new(&item.path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("");
+        if !file_name.is_empty() {
+            let local = files_dir.join(file_name);
+            if local.is_file() {
+                item.path = local.to_string_lossy().into();
+            }
+        }
+        if let Some(prev) = item.preview_path.as_ref() {
+            let preview_name = Path::new(prev)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("");
+            if !preview_name.is_empty() {
+                let local = previews_dir.join(preview_name);
+                if local.is_file() {
+                    item.preview_path = Some(local.to_string_lossy().into());
+                }
+            }
+        }
+        crate::sync::queue_push(&item);
+        items.push(item);
+        added += 1;
+    }
+    save_index(&items)?;
+    Ok(added)
+}
+
+fn zip_plain_dir(
+    zip: &mut zip::ZipWriter<fs::File>,
+    opts: zip::write::SimpleFileOptions,
+    dir: &Path,
+    prefix: &str,
+) -> Result<u32, String> {
+    let mut count = 0u32;
+    for entry in fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("asset.bin");
+        zip.start_file(format!("{prefix}/{name}"), opts)
+            .map_err(|e| e.to_string())?;
+        std::io::Write::write_all(zip, &fs::read(&path).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+        count += 1;
+    }
+    Ok(count)
+}
+
 pub fn get_bank_item(id_or_code: &str) -> Result<BankItem, String> {
     let needle = id_or_code.trim();
     if needle.is_empty() {
@@ -498,4 +658,45 @@ fn now() -> String {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs().to_string())
         .unwrap_or_else(|_| "0".into())
+}
+
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+pub(crate) fn sha256_file(path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path).map_err(|e| e.to_string())?;
+    Ok(sha256_hex(&bytes))
+}
+
+pub(crate) fn ingest_shared(mut item: BankItem) -> Result<bool, String> {
+    let mut items = load_index()?;
+    if !item.hash.trim().is_empty()
+        && items.iter().any(|row| !row.hash.is_empty() && row.hash == item.hash)
+    {
+        return Ok(false);
+    }
+    if items
+        .iter()
+        .any(|row| row.id == item.id || row.code.eq_ignore_ascii_case(&item.code))
+    {
+        return Ok(false);
+    }
+    item.shared = true;
+    items.push(item);
+    save_index(&items)?;
+    Ok(true)
+}
+
+pub(crate) fn mark_shared(id: &str) -> Result<(), String> {
+    let mut items = load_index()?;
+    if let Some(item) = items.iter_mut().find(|row| row.id == id) {
+        item.shared = true;
+        save_index(&items)?;
+    }
+    Ok(())
 }

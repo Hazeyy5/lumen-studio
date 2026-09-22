@@ -16,6 +16,17 @@ const TOKEN: &str = "https://apis.roblox.com/oauth/v1/token";
 const USERINFO: &str = "https://apis.roblox.com/oauth/v1/userinfo";
 const REVOKE: &str = "https://apis.roblox.com/oauth/v1/token/revoke";
 const SCOPES: &str = "openid profile asset:read asset:write";
+/// Client public de l’app Lumen (PKCE, pas de secret). Les comptes se connectent dessus.
+const LUMEN_OAUTH_CLIENT_ID: &str = "8191681078061914952";
+
+fn oauth_client_id(keys: &crate::keys::Keys) -> String {
+    let custom = keys.roblox_oauth_client_id.trim();
+    if custom.is_empty() {
+        LUMEN_OAUTH_CLIENT_ID.to_string()
+    } else {
+        custom.to_string()
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -216,13 +227,10 @@ fn valid_session() -> Result<Session, String> {
         return Err("non connecté".into());
     }
     let keys = load_keys()?;
-    let client_id = keys.roblox_oauth_client_id.trim().to_string();
+    let client_id = oauth_client_id(&keys);
     let client = http()?;
     let mut dirty = false;
     if session.expires_at <= now() {
-        if client_id.is_empty() {
-            return Err("non connecté".into());
-        }
         session = refresh_session(&client, &session, &client_id)?;
         dirty = true;
     }
@@ -257,17 +265,15 @@ fn logout_roblox_inner() -> Result<(), String> {
     if let Ok(session) = load_session() {
         if !session.refresh_token.is_empty() {
             if let Ok(keys) = load_keys() {
-                let client_id = keys.roblox_oauth_client_id.trim().to_string();
-                if !client_id.is_empty() {
-                    if let Ok(client) = http() {
-                        let _ = client
-                            .post(REVOKE)
-                            .form(&[
-                                ("token", session.refresh_token.as_str()),
-                                ("client_id", client_id.as_str()),
-                            ])
-                            .send();
-                    }
+                let client_id = oauth_client_id(&keys);
+                if let Ok(client) = http() {
+                    let _ = client
+                        .post(REVOKE)
+                        .form(&[
+                            ("token", session.refresh_token.as_str()),
+                            ("client_id", client_id.as_str()),
+                        ])
+                        .send();
                 }
             }
         }
@@ -285,10 +291,7 @@ pub async fn start_roblox_login(app: tauri::AppHandle) -> Result<RobloxUser, Str
 
 fn start_roblox_login_inner(app: tauri::AppHandle) -> Result<RobloxUser, String> {
     let keys = load_keys()?;
-    let client_id = keys.roblox_oauth_client_id.trim().to_string();
-    if client_id.is_empty() {
-        return Err("Ajoute le Client ID OAuth Roblox dans l’écran de connexion (app Creator Dashboard).".into());
-    }
+    let client_id = oauth_client_id(&keys);
 
     let verifier = random_token();
     let challenge = pkce_challenge(&verifier);
