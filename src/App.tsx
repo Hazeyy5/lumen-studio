@@ -119,6 +119,8 @@ export default function App() {
       setUpdateMsg(String(err));
     }
   }
+
+  async function refresh() {
     try {
       const [list, detected, stored, user] = await Promise.all([
         invoke<Project[]>("list_projects"),
