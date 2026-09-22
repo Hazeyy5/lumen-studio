@@ -45,14 +45,40 @@ fn explain(raw: &str) -> String {
 }
 
 fn run(dir: &Path, program: &str, args: &[String]) -> Result<Output, String> {
-    let mut cmd = Command::new(program);
-    cmd.args(args).current_dir(dir);
+    let exe = if program == "git" {
+        crate::git_tools::git_exe()?
+    } else if program == "gh" {
+        crate::git_tools::gh_exe()?
+    } else {
+        PathBuf::from(program)
+    };
+    let git = crate::git_tools::git_exe()?;
+    let gh = crate::git_tools::gh_exe()?;
+    let mut path = String::new();
+    if let Some(parent) = git.parent() {
+        path.push_str(&parent.display().to_string());
+        path.push(';');
+    }
+    if let Some(parent) = gh.parent() {
+        path.push_str(&parent.display().to_string());
+        path.push(';');
+    }
+    if let Ok(current) = std::env::var("PATH") {
+        path.push_str(&current);
+    }
+    let mut cmd = Command::new(exe);
+    cmd.args(args).current_dir(dir).env("PATH", path);
     if let Some(token) = crate::sync::github_token() {
         cmd.env("GH_TOKEN", &token);
         cmd.env("GITHUB_TOKEN", &token);
     }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
     cmd.output()
-        .map_err(|_| format!("{program} est introuvable. Installe Git et GitHub CLI, puis relance Lumen."))
+        .map_err(|e| format!("{program} n’a pas pu démarrer ({e})"))
 }
 
 fn git(dir: &Path, args: &[String]) -> Result<Output, String> {
@@ -266,6 +292,7 @@ pub fn project_share_status(project_path: String) -> Result<ProjectShare, String
 
 #[tauri::command]
 pub fn share_project(project_path: String, friend: Option<String>) -> Result<ProjectShare, String> {
+    crate::git_tools::ensure_github_login()?;
     let dir = project_dir(&project_path)?;
     let project = read_project_meta(&project_path)?;
     ensure_gitignore(&dir)?;
@@ -329,6 +356,7 @@ pub fn share_project(project_path: String, friend: Option<String>) -> Result<Pro
 
 #[tauri::command]
 pub fn push_project(project_path: String) -> Result<ProjectShare, String> {
+    crate::git_tools::ensure_github_login()?;
     let dir = project_dir(&project_path)?;
     if origin(&dir).is_none() {
         return Err("Partage d’abord le projet.".into());
@@ -346,6 +374,7 @@ pub fn push_project(project_path: String) -> Result<ProjectShare, String> {
 
 #[tauri::command]
 pub fn pull_project(project_path: String) -> Result<ProjectShare, String> {
+    crate::git_tools::ensure_github_login()?;
     let dir = project_dir(&project_path)?;
     if origin(&dir).is_none() {
         return Err("Ce projet n’est pas partagé.".into());
@@ -364,6 +393,7 @@ pub fn pull_project(project_path: String) -> Result<ProjectShare, String> {
 
 #[tauri::command]
 pub fn join_project(repo: String) -> Result<Project, String> {
+    crate::git_tools::ensure_github_login()?;
     let (owner, name) = parse_github_repo(&repo).ok_or("Indique le projet ainsi : pseudo/lumen-nom")?;
     let dest_name = slugify(&name);
     if dest_name.is_empty() {

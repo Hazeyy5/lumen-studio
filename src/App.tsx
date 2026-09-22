@@ -472,6 +472,7 @@ function JoinProject({
   onJoined: (project: Project) => Promise<void>;
 }) {
   const [repo, setRepo] = useState("");
+  const [info, setInfo] = useState("");
   return (
     <>
       <input
@@ -487,8 +488,10 @@ function JoinProject({
         onClick={async () => {
           setBusy(true);
           setErr("");
+          setInfo("Installation de Git et GitHub si besoin, puis connexion…");
           try {
             const project = await invoke<Project>("join_project", { repo: repo.trim() });
+            setInfo("");
             setRepo("");
             await onJoined(project);
           } catch (error) {
@@ -500,6 +503,7 @@ function JoinProject({
       >
         Rejoindre
       </button>
+      {info ? <span className="lede">{info}</span> : null}
     </>
   );
 }
@@ -527,7 +531,7 @@ function ProjectShareBar({ path }: { path: string }) {
 
   async function run(command: "share_project" | "push_project" | "pull_project") {
     setBusy(true);
-    setNote("");
+    setNote("Installation de Git et GitHub si besoin, puis connexion…");
     try {
       const next = await invoke<ProjectShare>(
         command,
@@ -1549,6 +1553,7 @@ function Studio({
 function Workshop({ project, keys }: { project: Project | null; keys: Keys }) {
   const [imagePrompt, setImagePrompt] = useState("Icône d’un tycoon saisonnier, style Roblox, PNG fond transparent");
   const [meshPrompt, setMeshPrompt] = useState("Coffre au trésor stylisé, low poly, pour Roblox");
+  const [meshImage, setMeshImage] = useState<string | null>(null);
   const [blenderScript, setBlenderScript] = useState(
     `import bpy
 
@@ -1578,6 +1583,52 @@ box.data.materials.append(mat)
   const [imageRbx, setImageRbx] = useState<string | null>(null);
   const [meshCode, setMeshCode] = useState<string | null>(null);
   const [meshRbx, setMeshRbx] = useState<string | null>(null);
+
+  async function sculptMesh(imageDataUrl: string | null) {
+    setBusy(true);
+    setErr("");
+    try {
+      const job = await invoke<{ id: string; provider: string; status: string }>("generate_mesh", {
+        prompt: meshPrompt,
+        imageDataUrl,
+      });
+      setMesh(`Job ${job.id} · ${job.status}`);
+      setMeshCode(null);
+      setMeshRbx(null);
+      const limit = imageDataUrl ? 300000 : 120000;
+      const started = Date.now();
+      while (Date.now() - started < limit) {
+        await new Promise((r) => setTimeout(r, 4000));
+        const polled = await invoke<{
+          status: string;
+          modelUrl: string | null;
+          thumbnailUrl: string | null;
+        }>("poll_mesh", { provider: job.provider, id: job.id });
+        setMesh(`Job ${job.id} · ${polled.status}`);
+        if (polled.modelUrl) {
+          setMesh(polled.modelUrl);
+          const saved = await invoke<BankItem>("save_mesh_url", {
+            url: polled.modelUrl,
+            name: `mesh-${Date.now()}`,
+            projectPath: project?.path ?? null,
+            thumbnailUrl: polled.thumbnailUrl,
+          });
+          setMeshPath(saved.path);
+          setMeshPreview(saved.previewPath ?? null);
+          setMeshCode(saved.code || null);
+          setMeshRbx(saved.robloxAssetId || null);
+          break;
+        }
+        if (["FAILED", "CANCELED", "ERROR"].includes(polled.status.toUpperCase())) {
+          break;
+        }
+      }
+    } catch (error) {
+      setErr(String(error));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <div>
@@ -1724,57 +1775,48 @@ box.data.materials.append(mat)
           ) : (
             <>
           <textarea value={meshPrompt} onChange={(e) => setMeshPrompt(e.target.value)} />
+          {keys.meshProvider === "meshy" ? (
+            <div className="row" style={{ marginTop: 12, alignItems: "center" }}>
+              <label className="btn secondary" style={{ cursor: "pointer" }}>
+                {meshImage ? "Changer l’image" : "Image pour Meshy"}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  hidden
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    event.target.value = "";
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = () => setMeshImage(String(reader.result || ""));
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </label>
+              {meshImage ? (
+                <img src={meshImage} alt="" style={{ width: 48, height: 48, objectFit: "cover", borderRadius: 8 }} />
+              ) : (
+                <small>PNG ou JPEG, Meshy en fait un modèle texturé.</small>
+              )}
+            </div>
+          ) : null}
           <div className="row" style={{ marginTop: 12 }}>
             <button
               className="btn"
               disabled={busy}
-              onClick={async () => {
-                setBusy(true);
-                setErr("");
-                try {
-                  const job = await invoke<{ id: string; provider: string; status: string }>(
-                    "generate_mesh",
-                    { prompt: meshPrompt },
-                  );
-                  setMesh(`Job ${job.id} · ${job.status}`);
-                  setMeshCode(null);
-                  setMeshRbx(null);
-                  const started = Date.now();
-                  while (Date.now() - started < 120000) {
-                    await new Promise((r) => setTimeout(r, 4000));
-                    const polled = await invoke<{
-                      status: string;
-                      modelUrl: string | null;
-                      thumbnailUrl: string | null;
-                    }>("poll_mesh", { provider: job.provider, id: job.id });
-                    setMesh(`Job ${job.id} · ${polled.status}`);
-                    if (polled.modelUrl) {
-                      setMesh(polled.modelUrl);
-                      const saved = await invoke<BankItem>("save_mesh_url", {
-                        url: polled.modelUrl,
-                        name: `mesh-${Date.now()}`,
-                        projectPath: project?.path ?? null,
-                        thumbnailUrl: polled.thumbnailUrl,
-                      });
-                      setMeshPath(saved.path);
-                      setMeshPreview(saved.previewPath ?? null);
-                      setMeshCode(saved.code || null);
-                      setMeshRbx(saved.robloxAssetId || null);
-                      break;
-                    }
-                    if (["FAILED", "CANCELED", "ERROR"].includes(polled.status.toUpperCase())) {
-                      break;
-                    }
-                  }
-                } catch (error) {
-                  setErr(String(error));
-                } finally {
-                  setBusy(false);
-                }
-              }}
+              onClick={() => void sculptMesh(null)}
             >
               Sculpturer
             </button>
+            {keys.meshProvider === "meshy" ? (
+              <button
+                className="btn copper"
+                disabled={busy || !meshImage}
+                onClick={() => void sculptMesh(meshImage)}
+              >
+                Image → 3D
+              </button>
+            ) : null}
           </div>
             </>
           )}

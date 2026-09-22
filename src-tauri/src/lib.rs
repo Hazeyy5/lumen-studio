@@ -6,6 +6,7 @@ mod bins;
 mod blender;
 mod catalog;
 mod compiler;
+mod git_tools;
 mod keys;
 mod oauth;
 mod collab;
@@ -48,6 +49,7 @@ pub fn run() {
         .setup(move |app| {
             studio::spawn_server(app.handle().clone(), studio_state.clone(), offer_state.clone());
             agent_api::spawn_server(app.handle().clone());
+            std::thread::spawn(git_tools::ensure_binaries);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

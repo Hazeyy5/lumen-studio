@@ -109,7 +109,7 @@ pub fn generate_image_for_project(project_path: &str, prompt: &str) -> Result<Sa
 
 pub fn generate_mesh_for_project(project_path: &str, prompt: &str) -> Result<SavedAsset, String> {
     let project = assert_lumen_project(project_path)?;
-    let job = generate_mesh(prompt.to_string())?;
+    let job = generate_mesh(prompt.to_string(), None)?;
     let mut last = job;
     for _ in 0..45 {
         std::thread::sleep(std::time::Duration::from_secs(4));
@@ -348,8 +348,17 @@ fn punch_flat_background(img: &mut image::RgbaImage) {
 }
 
 #[tauri::command]
-pub fn generate_mesh(prompt: String) -> Result<MeshJob, String> {
+pub fn generate_mesh(prompt: String, image_data_url: Option<String>) -> Result<MeshJob, String> {
     let keys = load_keys()?;
+    if let Some(image) = image_data_url.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        if keys.mesh_provider.eq_ignore_ascii_case("blender") {
+            return Err("Blender ne part pas d’une image. Choisis Meshy dans Réglages.".into());
+        }
+        if keys.mesh_provider.eq_ignore_ascii_case("tripo") {
+            return Err("L’image vers 3D utilise Meshy. Choisis Meshy dans Réglages.".into());
+        }
+        return start_meshy_image(&keys.meshy, image);
+    }
     if keys.mesh_provider.eq_ignore_ascii_case("blender") {
         return Err(
             "Moteur 3D = Blender. Écris un script bpy (sphères, cubes, cylindres, matériaux) dans assets/blender/, puis : node tools/lumen-asset.mjs blender assets/blender/nom.py \"Titre\"".into(),
@@ -364,6 +373,60 @@ pub fn generate_mesh(prompt: String) -> Result<MeshJob, String> {
         "tripo" => start_tripo(&keys.tripo, &prompt),
         _ => start_meshy(&keys.meshy, &prompt),
     }
+}
+
+fn meshy_image_uri(data_url: &str) -> Result<String, String> {
+    let (header, raw) = data_url.split_once(',').ok_or("Image invalide")?;
+    let lower = header.to_ascii_lowercase();
+    if lower.contains("image/png") || lower.contains("image/jpeg") || lower.contains("image/jpg") {
+        return Ok(data_url.to_string());
+    }
+    use base64::Engine;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(raw.trim())
+        .map_err(|e| format!("Image illisible : {e}"))?;
+    let img = image::load_from_memory(&bytes).map_err(|e| format!("Image illisible : {e}"))?;
+    let mut png = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+        .map_err(|e| e.to_string())?;
+    Ok(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(png)
+    ))
+}
+
+fn start_meshy_image(key: &str, data_url: &str) -> Result<MeshJob, String> {
+    if key.trim().is_empty() {
+        return Err("Ajoute une clé API Meshy dans Réglages".into());
+    }
+    let image_url = meshy_image_uri(data_url)?;
+    let res = client()?
+        .post("https://api.meshy.ai/openapi/v1/image-to-3d")
+        .bearer_auth(key.trim())
+        .json(&serde_json::json!({
+            "image_url": image_url,
+            "should_texture": true,
+            "target_formats": ["glb"]
+        }))
+        .send()
+        .map_err(|e| e.to_string())?;
+    let status = res.status();
+    let json: serde_json::Value = res.json().map_err(|e| e.to_string())?;
+    if !status.is_success() {
+        return Err(format!("Meshy a refusé l’image : {json}"));
+    }
+    let id = json
+        .get("result")
+        .and_then(|v| v.as_str())
+        .or_else(|| json.get("id").and_then(|v| v.as_str()))
+        .ok_or_else(|| format!("Réponse Meshy inattendue: {json}"))?;
+    Ok(MeshJob {
+        id: id.into(),
+        provider: "meshy-image".into(),
+        status: "PENDING".into(),
+        model_url: None,
+        thumbnail_url: None,
+    })
 }
 
 fn start_meshy(key: &str, prompt: &str) -> Result<MeshJob, String> {
@@ -455,8 +518,13 @@ pub fn poll_mesh(provider: String, id: String) -> Result<MeshJob, String> {
         });
     }
 
+    let endpoint = if provider == "meshy-image" {
+        format!("https://api.meshy.ai/openapi/v1/image-to-3d/{id}")
+    } else {
+        format!("https://api.meshy.ai/openapi/v2/text-to-3d/{id}")
+    };
     let res = client()?
-        .get(format!("https://api.meshy.ai/openapi/v2/text-to-3d/{id}"))
+        .get(endpoint)
         .bearer_auth(keys.meshy.trim())
         .send()
         .map_err(|e| e.to_string())?;
