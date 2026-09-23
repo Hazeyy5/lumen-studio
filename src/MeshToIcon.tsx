@@ -6,6 +6,11 @@ import type { BankItem } from "./types";
 
 type ModelViewerEl = HTMLElement & {
   shadowRoot: ShadowRoot | null;
+  cameraOrbit: string;
+  cameraTarget: string;
+  jumpCameraToGoal: () => void;
+  getCameraOrbit: () => { theta: number; phi: number; radius: number };
+  toBlob: (options?: { mimeType?: string }) => Promise<Blob>;
 };
 
 type IconOpts = {
@@ -72,6 +77,25 @@ function composeIcon(source: CanvasImageSource, size: number, opts: IconOpts) {
   return out;
 }
 
+function applyCamera(el: ModelViewerEl, zoom: number, vertical: number) {
+  const radius = Math.min(24, Math.max(0.2, 2.6 / zoom));
+  let theta = "auto";
+  let phi = "auto";
+  try {
+    const orbit = el.getCameraOrbit();
+    if (orbit && Number.isFinite(orbit.theta) && Number.isFinite(orbit.phi)) {
+      theta = `${orbit.theta}rad`;
+      phi = `${orbit.phi}rad`;
+    }
+  } catch {
+    /* le modèle n’est pas encore cadré */
+  }
+  const y = vertical * radius * 0.35;
+  el.cameraOrbit = `${theta} ${phi} ${radius.toFixed(3)}m`;
+  el.cameraTarget = `0m ${y.toFixed(3)}m 0m`;
+  el.jumpCameraToGoal?.();
+}
+
 function blobUrlFromBase64(b64: string) {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
@@ -120,6 +144,8 @@ export function MeshToIcon({
   const [err, setErr] = useState("");
 
   const opts: IconOpts = { outline, color, thickness, shadow, opacity, blur, offsetY };
+  const optsRef = useRef(opts);
+  optsRef.current = opts;
 
   useEffect(() => {
     if (!path) {
@@ -149,36 +175,66 @@ export function MeshToIcon({
   useEffect(() => {
     const el = viewerRef.current;
     if (!el || !src) return;
-    el.setAttribute("camera-orbit", `auto auto ${(2.4 / zoom).toFixed(2)}m`);
-    el.setAttribute("camera-target", `auto auto ${vertical.toFixed(2)}m`);
+    const apply = () => applyCamera(el, zoom, vertical);
+    el.addEventListener("load", apply);
+    apply();
+    return () => el.removeEventListener("load", apply);
   }, [zoom, vertical, src]);
 
   useEffect(() => {
-    if (!src) return;
-    const tick = () => {
-      const source = viewerRef.current?.shadowRoot?.querySelector("canvas");
-      const preview = previewRef.current;
-      if (!source || !preview) return;
-      const frame = composeIcon(source, 512, opts);
-      const ctx = preview.getContext("2d");
-      if (!ctx) return;
-      ctx.clearRect(0, 0, preview.width, preview.height);
-      ctx.drawImage(frame, 0, 0, preview.width, preview.height);
+    const el = viewerRef.current;
+    if (!el || !src || typeof el.toBlob !== "function") return;
+    let alive = true;
+    let timer = 0;
+    const draw = async () => {
+      try {
+        const blob = await el.toBlob({ mimeType: "image/png" });
+        if (!alive || !blob) return;
+        const bitmap = await createImageBitmap(blob);
+        if (!alive) {
+          bitmap.close();
+          return;
+        }
+        const frame = composeIcon(bitmap, 512, optsRef.current);
+        bitmap.close();
+        const preview = previewRef.current;
+        const ctx = preview?.getContext("2d");
+        if (!ctx || !preview) return;
+        ctx.clearRect(0, 0, preview.width, preview.height);
+        ctx.drawImage(frame, 0, 0, preview.width, preview.height);
+      } catch {
+        /* l’aperçu réessaiera au prochain mouvement */
+      }
     };
-    const id = window.setInterval(tick, 160);
-    return () => window.clearInterval(id);
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void draw(), 60);
+    };
+    el.addEventListener("camera-change", schedule);
+    el.addEventListener("load", schedule);
+    schedule();
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+      el.removeEventListener("camera-change", schedule);
+      el.removeEventListener("load", schedule);
+    };
   }, [src, outline, color, thickness, shadow, opacity, blur, offsetY]);
 
-  function currentFrame(size: number) {
-    const source = viewerRef.current?.shadowRoot?.querySelector("canvas");
-    if (!source) return null;
-    return composeIcon(source, size, opts);
+  async function framedIcon(size: number) {
+    const el = viewerRef.current;
+    if (!el || typeof el.toBlob !== "function") return null;
+    const blob = await el.toBlob({ mimeType: "image/png" });
+    const bitmap = await createImageBitmap(blob);
+    const frame = composeIcon(bitmap, size, opts);
+    bitmap.close();
+    return frame;
   }
 
-  function download() {
-    const frame = currentFrame(resolution);
-    if (!frame) return;
+  async function download() {
     try {
+      const frame = await framedIcon(resolution);
+      if (!frame) return;
       const link = document.createElement("a");
       link.href = frame.toDataURL("image/png");
       link.download = `icone-${resolution}.png`;
@@ -193,12 +249,15 @@ export function MeshToIcon({
       setErr("Ouvre un projet pour enregistrer l’icône dans la banque.");
       return;
     }
-    const frame = currentFrame(resolution);
-    if (!frame) return;
     setBusy(true);
     setErr("");
     let dataUrl = "";
     try {
+      const frame = await framedIcon(resolution);
+      if (!frame) {
+        setBusy(false);
+        return;
+      }
       dataUrl = frame.toDataURL("image/png");
     } catch {
       setBusy(false);
@@ -244,16 +303,24 @@ export function MeshToIcon({
                   className="icon-viewer"
                   src={src}
                   camera-controls
+                  disable-pan
                   interaction-prompt="none"
                   shadow-intensity="0"
                   environment-image="neutral"
+                  min-camera-orbit="auto auto 0.2m"
+                  max-camera-orbit="auto auto 24m"
                 />
               ) : (
                 <p className="lede">Choisis un modèle .glb</p>
               )}
-              <canvas ref={previewRef} className="icon-overlay" width={512} height={512} />
             </div>
-            <p className="icon-hint">Glisser pour pivoter · les curseurs règlent le cadrage</p>
+            <div className="icon-preview-row">
+              <canvas ref={previewRef} className="icon-preview" width={512} height={512} />
+              <p className="icon-hint">
+                Glisse le modèle pour le tourner. Le zoom et le décalage bougent la caméra.
+                L’aperçu à gauche montre l’icône avec contour et ombre.
+              </p>
+            </div>
           </div>
           <div className="icon-controls">
             <button
