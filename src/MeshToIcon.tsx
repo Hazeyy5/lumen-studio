@@ -77,13 +77,13 @@ function composeIcon(source: CanvasImageSource, size: number, opts: IconOpts) {
   return out;
 }
 
-function applyCamera(el: ModelViewerEl, zoom: number, vertical: number) {
+function applyCamera(el: ModelViewerEl, zoom: number, vertical: number, horizontal: number) {
   const radius = Math.min(24, Math.max(0.2, 2.6 / zoom));
   let theta = "auto";
   let phi = "auto";
   try {
     const orbit = el.getCameraOrbit();
-    if (orbit && Number.isFinite(orbit.theta) && Number.isFinite(orbit.phi)) {
+    if (orbit && Number.isFinite(orbit.theta) && Number.isFinite(orbit.phi) && orbit.radius > 0.05) {
       theta = `${orbit.theta}rad`;
       phi = `${orbit.phi}rad`;
     }
@@ -91,8 +91,9 @@ function applyCamera(el: ModelViewerEl, zoom: number, vertical: number) {
     /* le modèle n’est pas encore cadré */
   }
   const y = vertical * radius * 0.35;
+  const x = horizontal * radius * 0.35;
   el.cameraOrbit = `${theta} ${phi} ${radius.toFixed(3)}m`;
-  el.cameraTarget = `0m ${y.toFixed(3)}m 0m`;
+  el.cameraTarget = `${x.toFixed(3)}m ${y.toFixed(3)}m 0m`;
   el.jumpCameraToGoal?.();
 }
 
@@ -126,11 +127,13 @@ export function MeshToIcon({
   onClose: () => void;
 }) {
   const viewerRef = useRef<ModelViewerEl | null>(null);
+  const stageRef = useRef<HTMLCanvasElement | null>(null);
   const previewRef = useRef<HTMLCanvasElement | null>(null);
   const [path, setPath] = useState(initialPath || "");
   const [src, setSrc] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [vertical, setVertical] = useState(0);
+  const [horizontal, setHorizontal] = useState(0);
   const [outline, setOutline] = useState(true);
   const [color, setColor] = useState("#111111");
   const [thickness, setThickness] = useState(4);
@@ -175,11 +178,11 @@ export function MeshToIcon({
   useEffect(() => {
     const el = viewerRef.current;
     if (!el || !src) return;
-    const apply = () => applyCamera(el, zoom, vertical);
+    const apply = () => applyCamera(el, zoom, vertical, horizontal);
     el.addEventListener("load", apply);
     apply();
     return () => el.removeEventListener("load", apply);
-  }, [zoom, vertical, src]);
+  }, [zoom, vertical, horizontal, src]);
 
   useEffect(() => {
     const el = viewerRef.current;
@@ -197,11 +200,12 @@ export function MeshToIcon({
         }
         const frame = composeIcon(bitmap, 512, optsRef.current);
         bitmap.close();
-        const preview = previewRef.current;
-        const ctx = preview?.getContext("2d");
-        if (!ctx || !preview) return;
-        ctx.clearRect(0, 0, preview.width, preview.height);
-        ctx.drawImage(frame, 0, 0, preview.width, preview.height);
+        for (const preview of [stageRef.current, previewRef.current]) {
+          const ctx = preview?.getContext("2d");
+          if (!ctx || !preview) continue;
+          ctx.clearRect(0, 0, preview.width, preview.height);
+          ctx.drawImage(frame, 0, 0, preview.width, preview.height);
+        }
       } catch {
         /* l’aperçu réessaiera au prochain mouvement */
       }
@@ -219,7 +223,7 @@ export function MeshToIcon({
       el.removeEventListener("camera-change", schedule);
       el.removeEventListener("load", schedule);
     };
-  }, [src, outline, color, thickness, shadow, opacity, blur, offsetY]);
+  }, [src, zoom, vertical, horizontal, outline, color, thickness, shadow, opacity, blur, offsetY]);
 
   async function framedIcon(size: number) {
     const el = viewerRef.current;
@@ -313,12 +317,13 @@ export function MeshToIcon({
               ) : (
                 <p className="lede">Choisis un modèle .glb</p>
               )}
+              <canvas ref={stageRef} className="icon-overlay" width={512} height={512} />
             </div>
             <div className="icon-preview-row">
               <canvas ref={previewRef} className="icon-preview" width={512} height={512} />
               <p className="icon-hint">
-                Glisse le modèle pour le tourner. Le zoom et le décalage bougent la caméra.
-                L’aperçu à gauche montre l’icône avec contour et ombre.
+                Glisse le modèle pour le tourner. Le grand aperçu et la miniature montrent le contour
+                et l’ombre.
               </p>
             </div>
           </div>
@@ -363,6 +368,18 @@ export function MeshToIcon({
                 onChange={(event) => setVertical(Number(event.target.value))}
               />
               <span>{vertical.toFixed(2)}</span>
+            </label>
+            <label>
+              Décalage horizontal
+              <input
+                type="range"
+                min={-1}
+                max={1}
+                step={0.05}
+                value={horizontal}
+                onChange={(event) => setHorizontal(Number(event.target.value))}
+              />
+              <span>{horizontal.toFixed(2)}</span>
             </label>
             <label className="row">
               <input type="checkbox" checked={outline} onChange={(event) => setOutline(event.target.checked)} />
