@@ -1153,6 +1153,17 @@ input:focus, textarea:focus, select:focus { border-color: var(--copper); }
   gap: 12px;
   margin-top: 18px;
 }
+.boot-skip {
+  font-size: 13px;
+  padding: 6px 10px;
+}
+.icon-entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 16px;
+}
 
 .empty {
   border: 1px dashed var(--line);

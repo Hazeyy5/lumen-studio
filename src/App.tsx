@@ -146,7 +146,7 @@ export default function App() {
       setAgents(detected);
       setKeys({ ...EMPTY_KEYS, ...stored });
       setRobloxUser(user);
-      setCurrent((prev) => prev ?? list[0] ?? null);
+      setCurrent((prev) => prev ?? null);
     } catch (err) {
       setError(String(err));
     } finally {
@@ -238,7 +238,7 @@ export default function App() {
           <span>Jeux Roblox, à partir d’une phrase</span>
         </div>
         <nav>
-          {NAV.map((item) => (
+          {NAV.filter((item) => current || item.id === "projects").map((item) => (
             <button
               key={item.id}
               className={view === item.id ? "active" : ""}
@@ -1139,7 +1139,6 @@ function Studio({
   const bootDone = bootSteps.filter(
     (step) => step.status === "ok" || step.status === "warn" || step.status === "err",
   ).length;
-  const canSkip = bootSteps.some((step) => step.id === "serve" && step.status === "ok") || Boolean(syncErr);
   const showPlaceChoice =
     studio?.connected &&
     (!studio.bound || Boolean(placeWarn));
@@ -1203,11 +1202,9 @@ function Studio({
               <button className="text-link" type="button" onClick={onNeedProject}>
                 Retour aux projets
               </button>
-              {canSkip ? (
-                <button className="btn secondary" type="button" onClick={() => setBooting(false)}>
-                  Continuer sans attendre
-                </button>
-              ) : null}
+              <button className="btn secondary boot-skip" type="button" onClick={() => setBooting(false)}>
+                Continuer sans attendre
+              </button>
             </div>
           </div>
         </div>
@@ -1646,6 +1643,18 @@ box.data.materials.append(mat)
         <code>node tools/lumen-asset.mjs</code> — ils ne voient pas les clés.
       </p>
       {err ? <p className="err">{err}</p> : null}
+      <div className="card icon-entry">
+        <div>
+          <h2 style={{ fontSize: 22, margin: "0 0 6px" }}>Modèle vers icône 2D</h2>
+          <p className="lede" style={{ margin: 0 }}>
+            Tourne un mesh, ajoute un contour et une ombre, puis enregistre une icône PNG
+            (pet, objet, bouton).
+          </p>
+        </div>
+        <button className="btn copper" type="button" onClick={() => setIconOpen(true)}>
+          Ouvrir
+        </button>
+      </div>
       <div className="grid">
         <div className="card">
           <h2 style={{ fontSize: 22 }}>Image · Gemini</h2>
