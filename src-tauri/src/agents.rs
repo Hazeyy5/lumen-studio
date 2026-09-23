@@ -65,7 +65,7 @@ pub struct AgentResume {
     pub resume_id: String,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn detect_agents() -> Vec<AgentStatus> {
     vec![
         status("claude", "Claude Code", &["claude"]),
@@ -92,7 +92,7 @@ fn status(id: &str, label: &str, bins: &[&str]) -> AgentStatus {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_agent(
     app: AppHandle,
     sessions: tauri::State<SessionMap>,
@@ -635,7 +635,7 @@ fn newest_agy_conversation(project_path: &str, known: &HashSet<String>) -> Optio
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn live_agents(
     sessions: tauri::State<SessionMap>,
     project_path: String,
@@ -654,7 +654,7 @@ pub fn live_agents(
         .collect())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn write_agent(
     sessions: tauri::State<SessionMap>,
     session_id: String,
@@ -667,7 +667,7 @@ pub fn write_agent(
     writer.flush().map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn resize_agent(
     sessions: tauri::State<SessionMap>,
     session_id: String,
@@ -687,7 +687,7 @@ pub fn resize_agent(
         .map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stop_agent(
     sessions: tauri::State<SessionMap>,
     session_id: String,
@@ -700,7 +700,7 @@ pub fn stop_agent(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pause_project(
     sessions: tauri::State<SessionMap>,
     project_path: String,

@@ -56,6 +56,7 @@ export function AgentTerminal({
     term.open(host);
 
     const sendResize = () => {
+      if (host.clientWidth < 8 || host.clientHeight < 8) return;
       try {
         fit.fit();
       } catch {

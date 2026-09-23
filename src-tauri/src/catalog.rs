@@ -504,7 +504,7 @@ fn cache_remote_url(url: &str) -> Result<PathBuf, String> {
     Ok(dest)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn cache_remote_asset(url: String) -> Result<String, String> {
     let dest = cache_remote_url(url.trim())?;
     Ok(dest.to_string_lossy().into())
@@ -533,7 +533,7 @@ fn list_vibestarter_inner(force: bool) -> Result<Vec<BankItem>, String> {
     with_vibestarter(force, |items| items.to_vec())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_vibestarter_bank(force: Option<bool>) -> Result<Vec<BankItem>, String> {
     let force = force.unwrap_or(false);
     if force {

@@ -31,12 +31,12 @@ pub fn swarm_path(project_path: &str) -> Result<PathBuf, String> {
     Ok(dir.join(".lumen-swarm.json"))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn load_swarm(project_path: String) -> Result<SwarmFile, String> {
     read_swarm(&project_path)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_swarm(project_path: String, swarm: SwarmFile) -> Result<(), String> {
     write_swarm(&project_path, &swarm)
 }

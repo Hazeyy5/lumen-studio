@@ -266,7 +266,7 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn studio_status(state: tauri::State<StudioState>) -> StudioHeartbeat {
     let mut guard = state.lock().unwrap();
     guard.plugin_installed = plugin_installed();
@@ -338,7 +338,7 @@ pub fn bind_open_place(
     Ok(project)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn install_studio_plugin() -> Result<String, String> {
     let dir = plugins_dir().ok_or("Dossier Plugins Roblox introuvable")?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;

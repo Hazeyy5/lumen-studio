@@ -49,7 +49,7 @@ pub struct ToolchainStatus {
     pub node_path: Option<String>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn toolchain_status() -> ToolchainStatus {
     let node = find_binary(&["node.exe", "node"]);
     let npm = find_binary(&["npm.cmd", "npm"]);
@@ -103,7 +103,7 @@ fn out_ready(project: &Path) -> bool {
     project.join("out").join("server").exists() && project.join("include").exists()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn compiler_status(state: tauri::State<Mutex<CompilerState>>) -> CompilerStatus {
     let mut guard = state.lock().unwrap();
     let watching = if let Some(child) = guard.child.as_mut() {
@@ -182,7 +182,7 @@ fn start_watch(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_sync(
     compiler: tauri::State<Mutex<CompilerState>>,
     rojo: tauri::State<Mutex<RojoState>>,
@@ -223,7 +223,7 @@ pub fn start_sync(
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stop_sync(
     compiler: tauri::State<Mutex<CompilerState>>,
     rojo: tauri::State<Mutex<RojoState>>,

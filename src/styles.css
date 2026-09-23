@@ -1057,8 +1057,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--copper); }
   position: absolute;
   inset: 0;
   z-index: 12;
-  background: color-mix(in srgb, var(--paper) 92%, transparent);
-  backdrop-filter: blur(6px);
+  background: var(--paper);
   display: grid;
   place-items: center;
   padding: 24px;

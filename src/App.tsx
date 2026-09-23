@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -160,7 +160,7 @@ export default function App() {
       void invoke<AgentStatus[]>("detect_agents")
         .then(setAgents)
         .catch(() => {});
-    }, 8000);
+    }, 15000);
     const onFocus = () => {
       void invoke<Project[]>("list_projects")
         .then(setProjects)
@@ -242,7 +242,7 @@ export default function App() {
             <button
               key={item.id}
               className={view === item.id ? "active" : ""}
-              onClick={() => setView(item.id)}
+              onClick={() => startTransition(() => setView(item.id))}
             >
               {item.label}
             </button>
@@ -518,15 +518,18 @@ function ProjectShareBar({ path }: { path: string }) {
   useEffect(() => {
     let alive = true;
     setNote("");
-    void invoke<ProjectShare>("project_share_status", { projectPath: path })
-      .then((next) => {
-        if (alive) setShare(next);
-      })
-      .catch((error) => {
-        if (alive) setNote(String(error));
-      });
+    const timer = window.setTimeout(() => {
+      void invoke<ProjectShare>("project_share_status", { projectPath: path })
+        .then((next) => {
+          if (alive) setShare(next);
+        })
+        .catch((error) => {
+          if (alive) setNote(String(error));
+        });
+    }, 600);
     return () => {
       alive = false;
+      window.clearTimeout(timer);
     };
   }, [path]);
 
@@ -711,7 +714,7 @@ function Studio({
   const [toolchain, setToolchain] = useState<ToolchainStatus | null>(null);
   const [offer, setOffer] = useState<PlaceOffer | null>(null);
   const [syncErr, setSyncErr] = useState("");
-  const [booting, setBooting] = useState(true);
+  const [booting, setBooting] = useState(false);
   const [bootSteps, setBootSteps] = useState<BootStep[]>(bootStepsTemplate);
   const [placeWarn, setPlaceWarn] = useState<{ open: string; bound: string } | null>(null);
   const swarmReady = useRef(false);
@@ -839,14 +842,15 @@ function Studio({
         /* ignore */
       }
     }
-    void tick();
-    const id = setInterval(() => void tick(), 2000);
+    const first = window.setTimeout(() => void tick(), 800);
+    const id = window.setInterval(() => void tick(), 2500);
     const unlisten = listen<StudioHeartbeat>("studio-heartbeat", (event) => {
       setStudio(event.payload);
     });
     return () => {
       cancel = true;
-      clearInterval(id);
+      window.clearTimeout(first);
+      window.clearInterval(id);
       void unlisten.then((fn) => fn());
     };
   }, []);
@@ -864,10 +868,8 @@ function Studio({
     }
 
     async function boot() {
-      setBooting(true);
       setSyncErr("");
       setPlaceWarn(null);
-      setBootSteps(bootStepsTemplate());
       try {
         const [rojoNow, compilerNow, tools] = await Promise.all([
           invoke<RojoStatus>("rojo_status"),
@@ -876,6 +878,8 @@ function Studio({
         ]);
         if (cancel) return;
         setToolchain(tools);
+        setRojo(rojoNow);
+        setCompiler(compilerNow);
         const already =
           rojoNow.reachable &&
           rojoNow.projectPath === projectPath &&
@@ -885,6 +889,8 @@ function Studio({
           return;
         }
 
+        setBooting(true);
+        setBootSteps(bootStepsTemplate());
         patch("node", { status: "run" });
         if (!tools.node || !tools.npm) {
           patch("node", {

@@ -382,7 +382,7 @@ fn list_textures_inner(force: bool) -> Result<Vec<BankItem>, String> {
     Ok(items)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_textures_bank(force: Option<bool>) -> Result<Vec<BankItem>, String> {
     let force = force.unwrap_or(false);
     if force {

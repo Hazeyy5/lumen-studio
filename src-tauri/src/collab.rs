@@ -284,13 +284,13 @@ fn project_dir(path: &str) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn project_share_status(project_path: String) -> Result<ProjectShare, String> {
     let dir = project_dir(&project_path)?;
     Ok(status_of(&dir, ""))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn share_project(project_path: String, friend: Option<String>) -> Result<ProjectShare, String> {
     crate::git_tools::ensure_github_login()?;
     let dir = project_dir(&project_path)?;
@@ -354,7 +354,7 @@ pub fn share_project(project_path: String, friend: Option<String>) -> Result<Pro
     Ok(status_of(&dir, &note))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn push_project(project_path: String) -> Result<ProjectShare, String> {
     crate::git_tools::ensure_github_login()?;
     let dir = project_dir(&project_path)?;
@@ -372,7 +372,7 @@ pub fn push_project(project_path: String) -> Result<ProjectShare, String> {
     Ok(status_of(&dir, note))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn pull_project(project_path: String) -> Result<ProjectShare, String> {
     crate::git_tools::ensure_github_login()?;
     let dir = project_dir(&project_path)?;
@@ -391,7 +391,7 @@ pub fn pull_project(project_path: String) -> Result<ProjectShare, String> {
     Ok(status_of(&dir, "Reçu. Relance la sync Studio si tu es celui qui envoie vers le jeu."))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn join_project(repo: String) -> Result<Project, String> {
     crate::git_tools::ensure_github_login()?;
     let (owner, name) = parse_github_repo(&repo).ok_or("Indique le projet ainsi : pseudo/lumen-nom")?;

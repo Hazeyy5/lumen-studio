@@ -88,7 +88,7 @@ fn rojo_path() -> Option<PathBuf> {
     candidates.into_iter().find(|p| exe_matches_host(p))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn rojo_status(state: tauri::State<Mutex<RojoState>>) -> RojoStatus {
     let serving = {
         let mut guard = state.lock().unwrap();
@@ -125,12 +125,12 @@ pub fn rojo_status(state: tauri::State<Mutex<RojoState>>) -> RojoStatus {
 fn port_open(port: u16) -> bool {
     std::net::TcpStream::connect_timeout(
         &format!("127.0.0.1:{port}").parse().unwrap(),
-        Duration::from_millis(200),
+        Duration::from_millis(40),
     )
     .is_ok()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn start_rojo(
     state: tauri::State<Mutex<RojoState>>,
     offer: tauri::State<OfferState>,
@@ -199,7 +199,7 @@ fn pick_free_port() -> Result<u16, String> {
     Err("Tous les ports Lumen (34873–34878) sont pris. Ferme l’autre Rojo (VibeStarter) et réessaie.".into())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stop_rojo(
     state: tauri::State<Mutex<RojoState>>,
     offer: tauri::State<OfferState>,
@@ -219,7 +219,7 @@ fn stop_rojo_inner(state: &tauri::State<Mutex<RojoState>>) -> Result<(), String>
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn install_rojo() -> Result<String, String> {
     if let Some(existing) = rojo_path() {
         return Ok(existing.to_string_lossy().into());

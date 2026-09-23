@@ -48,7 +48,7 @@ fn meta_path(dir: &Path) -> PathBuf {
     dir.join(".lumen.json")
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_projects() -> Result<Vec<Project>, String> {
     let root = projects_root()?;
     let mut out = Vec::new();

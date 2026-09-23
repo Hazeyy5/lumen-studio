@@ -134,7 +134,7 @@ pub(crate) fn save_index(items: &[BankItem]) -> Result<(), String> {
     fs::write(index_path()?, raw).map_err(|e| e.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_bank() -> Result<Vec<BankItem>, String> {
     let mut items = load_index()?;
     items.sort_by(|a, b| b.created_at.cmp(&a.created_at));
@@ -192,7 +192,7 @@ fn page_of(items: &[BankItem], query: &str, kind: &str, offset: usize, limit: us
     (total, page)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn bank_counts(force: Option<bool>) -> Result<BankCounts, String> {
     let force = force.unwrap_or(false);
     let index = load_index()?;
@@ -216,7 +216,7 @@ pub fn bank_counts(force: Option<bool>) -> Result<BankCounts, String> {
     })
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn bank_page(
     shelf: String,
     kind: Option<String>,

@@ -1,4 +1,7 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 pub fn extra_bin_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
@@ -32,6 +35,28 @@ pub fn extra_bin_dirs() -> Vec<PathBuf> {
 }
 
 pub fn find_binary(candidates: &[&str]) -> Option<PathBuf> {
+    let key = candidates.join("\0");
+    let cache = binary_cache();
+    if let Ok(guard) = cache.lock() {
+        if let Some((at, path)) = guard.get(&key) {
+            if at.elapsed() < Duration::from_secs(30) {
+                return path.clone();
+            }
+        }
+    }
+    let found = find_binary_uncached(candidates);
+    if let Ok(mut guard) = cache.lock() {
+        guard.insert(key, (Instant::now(), found.clone()));
+    }
+    found
+}
+
+fn binary_cache() -> &'static Mutex<HashMap<String, (Instant, Option<PathBuf>)>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, (Instant, Option<PathBuf>)>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn find_binary_uncached(candidates: &[&str]) -> Option<PathBuf> {
     for name in candidates {
         if let Ok(path) = which::which(name) {
             return Some(path);
