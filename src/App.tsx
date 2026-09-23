@@ -9,7 +9,7 @@ import { AgentTerminal } from "./AgentTerminal";
 import { AssetReviewHost } from "./AssetReview";
 import { AssetCode, AssetLightbox, bankImageSrc, lightboxFromBank, type LightboxAsset } from "./AssetLightbox";
 import { MeshPreview, MeshStill } from "./MeshPreview";
-import { MeshToIcon } from "./MeshToIcon";
+import { ModelToIconPage } from "./MeshToIcon";
 import { ptyBus } from "./ptyBus";
 import { imageBrief, imageFilesFromTransfer, savePastedFiles, type PastedImage } from "./pasteImage";
 import { applyTheme, readTheme, toggleTheme, type Theme } from "./theme";
@@ -1587,7 +1587,7 @@ box.data.materials.append(mat)
   const [imageRbx, setImageRbx] = useState<string | null>(null);
   const [meshCode, setMeshCode] = useState<string | null>(null);
   const [meshRbx, setMeshRbx] = useState<string | null>(null);
-  const [iconOpen, setIconOpen] = useState(false);
+  const [atelierTab, setAtelierTab] = useState<"visuels" | "habillage" | "image3d" | "model2d">("model2d");
 
   async function sculptMesh(imageDataUrl: string | null) {
     setBusy(true);
@@ -1636,33 +1636,46 @@ box.data.materials.append(mat)
   }
 
   return (
-    <div>
-      <h1>Atelier</h1>
-      <p className="lede">
-        Images via Gemini. Modèles 3D via{" "}
-        {keys.meshProvider === "blender"
-          ? "Blender (script bpy)"
-          : keys.meshProvider === "tripo"
-            ? "Tripo"
-            : "Meshy"}
-        . Les clés restent dans Réglages. Claude, Codex et Cursor passent par{" "}
-        <code>node tools/lumen-asset.mjs</code> — ils ne voient pas les clés.
-      </p>
+    <div className="atelier">
+      <aside className="atelier-rail">
+        <div className="atelier-kicker">Atelier IA</div>
+        {(
+          [
+            ["visuels", "Visuels"],
+            ["habillage", "Habillage"],
+            ["image3d", "Image → 3D"],
+            ["model2d", "Modèle → 2D"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            className={atelierTab === id ? "on" : ""}
+            onClick={() => setAtelierTab(id)}
+          >
+            <AtelierGlyph id={id} />
+            {label}
+          </button>
+        ))}
+      </aside>
+      <div className="atelier-main">
       {err ? <p className="err">{err}</p> : null}
-      <div className="card icon-entry">
-        <div>
-          <h2 style={{ fontSize: 22, margin: "0 0 6px" }}>Modèle vers icône 2D</h2>
-          <p className="lede" style={{ margin: 0 }}>
-            Tourne un mesh, ajoute un contour et une ombre, puis enregistre une icône PNG
-            (pet, objet, bouton).
+      {atelierTab === "model2d" ? <ModelToIconPage projectPath={project?.path ?? null} /> : null}
+      {atelierTab === "habillage" ? (
+        <div className="model-page">
+          <p className="atelier-kicker">Atelier · Habillage</p>
+          <h1>Habillage</h1>
+          <p className="lede model-lede">
+            Les textures et le pavage du jeu sont dans la Banque, étagère Textures.
           </p>
         </div>
-        <button className="btn copper" type="button" onClick={() => setIconOpen(true)}>
-          Ouvrir
-        </button>
-      </div>
-      <div className="grid">
+      ) : null}
+      {atelierTab === "visuels" || atelierTab === "image3d" ? (
+      <div className="atelier-form">
+        {atelierTab === "visuels" ? (
         <div className="card">
+          <>
+          <p className="atelier-kicker">Atelier · Visuels</p>
           <h2 style={{ fontSize: 22 }}>Image · Gemini</h2>
           <textarea value={imagePrompt} onChange={(e) => setImagePrompt(e.target.value)} />
           <div className="row" style={{ marginTop: 12 }}>
@@ -1735,21 +1748,20 @@ box.data.materials.append(mat)
               </div>
             </div>
           ) : null}
+          </>
         </div>
+        ) : null}
+        {atelierTab === "image3d" ? (
         <div className="card">
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <h2 style={{ fontSize: 22, margin: 0 }}>
+          <p className="atelier-kicker">Atelier · Image → 3D</p>
+          <h2 style={{ fontSize: 22, margin: 0 }}>
             3D ·{" "}
             {keys.meshProvider === "blender"
               ? "Blender"
               : keys.meshProvider === "tripo"
                 ? "Tripo"
                 : "Meshy"}
-            </h2>
-            <button className="btn secondary" type="button" onClick={() => setIconOpen(true)}>
-              Modèle vers icône 2D
-            </button>
-          </div>
+          </h2>
           {keys.meshProvider === "blender" ? (
             <>
               <p className="lede" style={{ marginBottom: 12 }}>
@@ -1882,16 +1894,49 @@ box.data.materials.append(mat)
             </div>
           ) : null}
         </div>
+        ) : null}
       </div>
-      {lightbox ? <AssetLightbox asset={lightbox} onClose={() => setLightbox(null)} /> : null}
-      {iconOpen ? (
-        <MeshToIcon
-          projectPath={project?.path ?? null}
-          initialPath={meshPath}
-          onClose={() => setIconOpen(false)}
-        />
       ) : null}
+      {lightbox ? <AssetLightbox asset={lightbox} onClose={() => setLightbox(null)} /> : null}
+      </div>
     </div>
+  );
+}
+
+function AtelierGlyph({ id }: { id: "visuels" | "habillage" | "image3d" | "model2d" }) {
+  const common = {
+    viewBox: "0 0 24 24",
+    "aria-hidden": true as const,
+  };
+  if (id === "visuels") {
+    return (
+      <svg {...common}>
+        <rect x="4" y="5" width="16" height="14" rx="2" />
+        <path d="M8 14.5 11 11l2.2 2.2L16 10.5" />
+      </svg>
+    );
+  }
+  if (id === "habillage") {
+    return (
+      <svg {...common}>
+        <path d="M8 5h8l2 3v11H6V8l2-3Z" />
+        <path d="M9 5c.4 1.6 1.4 2.4 3 2.4S14.6 6.6 15 5" />
+      </svg>
+    );
+  }
+  if (id === "image3d") {
+    return (
+      <svg {...common}>
+        <path d="M12 4 19 8v8l-7 4-7-4V8l7-4Z" />
+        <path d="M12 12 19 8M12 12v8M12 12 5 8" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common}>
+      <path d="M12 4 19 8v8l-7 4-7-4V8l7-4Z" />
+      <path d="M8 15h8M14 12l3 3-3 3" />
+    </svg>
   );
 }
 

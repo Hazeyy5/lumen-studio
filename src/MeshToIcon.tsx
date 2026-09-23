@@ -1,6 +1,8 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
+import { MeshStill } from "./MeshPreview";
+import type { BankItem } from "./types";
 
 type ModelViewerEl = HTMLElement & {
   shadowRoot: ShadowRoot | null;
@@ -392,6 +394,157 @@ export function MeshToIcon({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+const MODEL_PAGE = 15;
+
+function ModelThumb({ item }: { item: BankItem }) {
+  if (item.previewPath) {
+    const src = item.previewPath.startsWith("http")
+      ? item.previewPath
+      : convertFileSrc(item.previewPath);
+    return <img className="model-pick-img" src={src} alt="" loading="lazy" decoding="async" />;
+  }
+  if (!item.path.startsWith("http")) {
+    return <MeshStill id={item.id} path={item.path} previewPath={item.previewPath} className="model-pick-still" />;
+  }
+  return <span className="model-pick-fallback">3D</span>;
+}
+
+export function ModelToIconPage({ projectPath }: { projectPath: string | null }) {
+  const [query, setQuery] = useState("");
+  const [needle, setNeedle] = useState("");
+  const [items, setItems] = useState<BankItem[]>([]);
+  const [available, setAvailable] = useState(0);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [picked, setPicked] = useState<string | null>(null);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setNeedle(query.trim()), 220);
+    return () => window.clearTimeout(id);
+  }, [query]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [needle]);
+
+  useEffect(() => {
+    let cancel = false;
+    void invoke<{ vibeMeshes: number }>("bank_counts")
+      .then((counts) => {
+        if (!cancel) setAvailable(counts.vibeMeshes);
+      })
+      .catch(() => {});
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancel = false;
+    setLoading(true);
+    void invoke<{ total: number; items: BankItem[] }>("bank_page", {
+      shelf: "vibestarter",
+      kind: "mesh",
+      query: needle,
+      offset: page * MODEL_PAGE,
+      limit: MODEL_PAGE,
+    })
+      .then((result) => {
+        if (cancel) return;
+        setItems(result.items);
+        setTotal(result.total);
+        setLoading(false);
+      })
+      .catch((error) => {
+        if (cancel) return;
+        setErr(String(error));
+        setLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [needle, page]);
+
+  const pages = Math.max(1, Math.ceil(total / MODEL_PAGE));
+
+  return (
+    <div className="model-page">
+      <p className="atelier-kicker">Atelier · Conversion</p>
+      <h1>Modèle → 2D</h1>
+      <p className="lede model-lede">
+        Rends un modèle 3D existant en image 2D. Choisis un modèle dans la bibliothèque pour démarrer.
+      </p>
+      <div className="model-count">
+        <i />
+        Modèles disponibles <strong>{available.toLocaleString("fr-FR")}</strong> assets
+      </div>
+      <label className="model-search">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="6.5" />
+          <path d="M16 16.5 20 20.5" />
+        </svg>
+        <input
+          type="search"
+          value={query}
+          placeholder="Rechercher des assets (en anglais)..."
+          onChange={(event) => setQuery(event.target.value)}
+        />
+      </label>
+      {err ? <p className="err">{err}</p> : null}
+      <div className="model-grid">
+        {items.map((item) => (
+          <button
+            key={item.id}
+            className="model-pick"
+            type="button"
+            onClick={() => setPicked(item.path)}
+          >
+            <span className="model-pick-thumb">
+              <ModelThumb item={item} />
+            </span>
+            <span className="model-pick-name">{item.name}</span>
+          </button>
+        ))}
+      </div>
+      {!loading && items.length === 0 ? (
+        <p className="lede">Aucun modèle pour cette recherche.</p>
+      ) : null}
+      {total > MODEL_PAGE ? (
+        <div className="bank-pager">
+          <button
+            className="btn secondary"
+            type="button"
+            disabled={page === 0}
+            onClick={() => setPage((value) => Math.max(0, value - 1))}
+          >
+            Précédent
+          </button>
+          <span>
+            {page + 1} / {pages}
+          </span>
+          <button
+            className="btn secondary"
+            type="button"
+            disabled={page + 1 >= pages}
+            onClick={() => setPage((value) => value + 1)}
+          >
+            Suivant
+          </button>
+        </div>
+      ) : null}
+      {picked ? (
+        <MeshToIcon
+          projectPath={projectPath}
+          initialPath={picked}
+          onClose={() => setPicked(null)}
+        />
+      ) : null}
     </div>
   );
 }
