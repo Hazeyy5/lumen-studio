@@ -8,7 +8,8 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { AgentTerminal } from "./AgentTerminal";
 import { AssetReviewHost } from "./AssetReview";
 import { AssetCode, AssetLightbox, bankImageSrc, lightboxFromBank, type LightboxAsset } from "./AssetLightbox";
-import { MeshPreview } from "./MeshPreview";
+import { MeshPreview, MeshStill } from "./MeshPreview";
+import { MeshToIcon } from "./MeshToIcon";
 import { ptyBus } from "./ptyBus";
 import { imageBrief, imageFilesFromTransfer, savePastedFiles, type PastedImage } from "./pasteImage";
 import { applyTheme, readTheme, toggleTheme, type Theme } from "./theme";
@@ -1583,6 +1584,7 @@ box.data.materials.append(mat)
   const [imageRbx, setImageRbx] = useState<string | null>(null);
   const [meshCode, setMeshCode] = useState<string | null>(null);
   const [meshRbx, setMeshRbx] = useState<string | null>(null);
+  const [iconOpen, setIconOpen] = useState(false);
 
   async function sculptMesh(imageDataUrl: string | null) {
     setBusy(true);
@@ -1720,14 +1722,19 @@ box.data.materials.append(mat)
           ) : null}
         </div>
         <div className="card">
-          <h2 style={{ fontSize: 22 }}>
+          <div className="row" style={{ justifyContent: "space-between" }}>
+            <h2 style={{ fontSize: 22, margin: 0 }}>
             3D ·{" "}
             {keys.meshProvider === "blender"
               ? "Blender"
               : keys.meshProvider === "tripo"
                 ? "Tripo"
                 : "Meshy"}
-          </h2>
+            </h2>
+            <button className="btn secondary" type="button" onClick={() => setIconOpen(true)}>
+              Modèle vers icône 2D
+            </button>
+          </div>
           {keys.meshProvider === "blender" ? (
             <>
               <p className="lede" style={{ marginBottom: 12 }}>
@@ -1862,6 +1869,13 @@ box.data.materials.append(mat)
         </div>
       </div>
       {lightbox ? <AssetLightbox asset={lightbox} onClose={() => setLightbox(null)} /> : null}
+      {iconOpen ? (
+        <MeshToIcon
+          projectPath={project?.path ?? null}
+          initialPath={meshPath}
+          onClose={() => setIconOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -2267,15 +2281,15 @@ function BankThumb({ item }: { item: BankItem }) {
     );
   }
   if (item.kind === "mesh" && item.previewPath) {
+    const src = item.previewPath.startsWith("http")
+      ? item.previewPath
+      : convertFileSrc(item.previewPath);
     return (
-      <img
-        className="bank-thumb bank-mesh"
-        src={convertFileSrc(item.previewPath)}
-        alt=""
-        loading="lazy"
-        decoding="async"
-      />
+      <img className="bank-thumb bank-mesh" src={src} alt="" loading="lazy" decoding="async" />
     );
+  }
+  if (item.kind === "mesh" && !item.path.startsWith("http")) {
+    return <MeshStill id={item.id} path={item.path} previewPath={item.previewPath} />;
   }
   if (item.kind === "mesh") return <div className="bank-thumb bank-mesh">3D</div>;
   return <div className="bank-thumb">{item.kind}</div>;
@@ -2318,17 +2332,16 @@ function Bank() {
   const pageSize = 48;
 
   async function refresh(force = false) {
-    try {
-      const sync = await invoke<{ pulled: number; pushed: number; message: string }>(
-        "sync_shared_bank",
-      ).catch(() => null);
-      if (sync && (sync.pulled > 0 || sync.pushed > 0)) setNote(sync.message);
-    } catch {
-      /* hors-ligne : on affiche la banque locale */
-    }
     const overview = await invoke<BankCounts>("bank_counts", { force });
     setCounts(overview);
     setReload((value) => value + 1);
+    void invoke<{ pulled: number; pushed: number; message: string }>("sync_shared_bank")
+      .then((sync) => {
+        if (sync && (sync.pulled > 0 || sync.pushed > 0)) setNote(sync.message);
+      })
+      .catch(() => {
+        /* hors-ligne : la banque locale reste affichée */
+      });
   }
 
   useEffect(() => {
