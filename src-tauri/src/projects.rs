@@ -600,15 +600,17 @@ pub(crate) fn slugify(name: &str) -> String {
 
 const HUD_SECTION: &str = r#"
 ## HUD / UI
-Le pack Essential UI est déjà dans le jeu, fichiers dans `assets/ui/pack/`. Rojo le place dans les vrais services. Ne le réinstalle pas, ne le déplace pas, ne redessine pas les menus.
+Le pack Essential UI est dans chaque projet, fichiers dans `assets/ui/pack/`. Rojo le place dans les services. Il n'y a pas d'écran de chargement : n'en ajoute pas, et n'ajoute rien dans `ReplicatedFirst`.
+
+Sers-t'en pour l'interface. Si l'utilisateur dit de t'en inspirer, reprends le layout, les couleurs ou un seul menu, puis adapte. S'il dit de l'utiliser, garde les frames et les contrôleurs de ce menu.
 
 - `StarterGui.Main` : interface. `Main.HUD` (`Left`, `Right`, `Notifications`) reste visible. `Main.Frames` : `Shop`, `Settings`, `Wheel`, `DailyRewards`, `TimeRewards`, `Codes`, `Confirm`, `Friends`, `Gifting`, `Group`.
-- `StarterGui.Full` : autre écran du pack. `ReplicatedFirst` : écran de chargement.
+- `StarterGui.Full` : autre écran du pack.
 - `StarterPlayerScripts.Client` charge `Controllers`. `ServerScriptService.Server` charge `Services`.
 - `ReplicatedStorage.Configuration` : ids, icônes et textes (`Passes`, `Products`, `Packs`, `DailyRewards`, `WheelSpin`, `PlaytimeRewards`, `General`, `Promotion`).
 - Récompenses à adapter dans `ServerScriptService.Services` : `DailyRewardsService.RewardFunctions`, `PlaytimeRewardsService.RewardFunctions`, `WheelSpinService.RewardFunctions`, `MarketplaceService.ProductsRewards`, `PassesRewards`, `PacksRewards`.
 
-Tu peux changer textes, couleurs, positions, images et ces fonctions de récompense. Garde les noms et la hiérarchie. Laisse `Packages`, `Cmdr` et les contrôleurs en place.
+Tu peux changer textes, couleurs, positions, images et ces fonctions de récompense. Si tu modifies un écran du pack, garde ses noms. Laisse `Packages` et `Cmdr` en place.
 "#;
 
 const ASSET_SECTION: &str = r#"
@@ -819,7 +821,6 @@ fn essential_ui_source() -> Option<PathBuf> {
 
 fn service_dir_name(name: &str) -> Option<&'static str> {
     match name {
-        "ReplicatedFirst" => Some("ReplicatedFirst"),
         "ReplicatedStorage" => Some("ReplicatedStorage"),
         "ServerScriptService" => Some("ServerScriptService"),
         "StarterGui" => Some("StarterGui"),
@@ -1019,6 +1020,8 @@ fn install_ui_kit(dir: &Path) -> Result<(), String> {
         fs::write(&project_stamp, stamp.trim()).map_err(|e| e.to_string())?;
     }
     let _ = fs::remove_file(dir.join("assets").join("ui").join("Main.rbxmx"));
+    let _ = fs::remove_dir_all(pack.join("ReplicatedFirst"));
+    let _ = fs::remove_dir_all(dest.join("ReplicatedFirst"));
 
     let project = dir.join("default.project.json");
     if !project.is_file() {
@@ -1039,8 +1042,15 @@ fn install_ui_kit(dir: &Path) -> Result<(), String> {
             storage.remove("Main");
         }
     }
+    if tree
+        .get("ReplicatedFirst")
+        .and_then(|node| node.get("$path"))
+        .and_then(|path| path.as_str())
+        == Some("assets/ui/pack/ReplicatedFirst")
+    {
+        tree.remove("ReplicatedFirst");
+    }
     let mounts = [
-        ("ReplicatedFirst", "ReplicatedFirst", "assets/ui/pack/ReplicatedFirst"),
         ("ReplicatedStorage", "ReplicatedStorage", "assets/ui/pack/ReplicatedStorage"),
         ("ServerScriptService", "ServerScriptService", "assets/ui/pack/ServerScriptService"),
         ("StarterGui", "StarterGui", "assets/ui/pack/StarterGui"),
