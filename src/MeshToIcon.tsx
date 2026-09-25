@@ -97,6 +97,42 @@ function applyCamera(el: ModelViewerEl, zoom: number, vertical: number, horizont
   el.jumpCameraToGoal?.();
 }
 
+function grabVisible(el: HTMLElement) {
+  const root = el.shadowRoot;
+  if (!root) return null;
+  const webgl = root.querySelector("#webgl-canvas");
+  const shown = root.querySelector("canvas.show");
+  const canvas =
+    webgl instanceof HTMLCanvasElement && webgl.classList.contains("show")
+      ? webgl
+      : shown instanceof HTMLCanvasElement
+        ? shown
+        : null;
+  if (!canvas || canvas.width < 2 || canvas.height < 2) return null;
+  const viewW = Math.max(1, el.clientWidth);
+  const viewH = Math.max(1, el.clientHeight);
+  const cssW = canvas.clientWidth || viewW;
+  const cssH = canvas.clientHeight || viewH;
+  const srcW = Math.min(canvas.width, Math.max(1, Math.round(viewW * (canvas.width / cssW))));
+  const srcH = Math.min(canvas.height, Math.max(1, Math.round(viewH * (canvas.height / cssH))));
+  const srcY = canvas.id === "webgl-canvas" ? Math.max(0, canvas.height - srcH) : 0;
+  const shot = document.createElement("canvas");
+  shot.width = srcW;
+  shot.height = srcH;
+  const ctx = shot.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(canvas, 0, srcY, srcW, srcH, 0, 0, srcW, srcH);
+  return shot;
+}
+
+function paintFrame(frame: HTMLCanvasElement, preview: HTMLCanvasElement | null) {
+  if (!preview) return;
+  const ctx = preview.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, preview.width, preview.height);
+  ctx.drawImage(frame, 0, 0, preview.width, preview.height);
+}
+
 function blobUrlFromBase64(b64: string) {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
@@ -142,6 +178,7 @@ export function MeshToIcon({
   const [blur, setBlur] = useState(16);
   const [offsetY, setOffsetY] = useState(12);
   const [resolution, setResolution] = useState(512);
+  const [framed, setFramed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
   const [err, setErr] = useState("");
@@ -185,59 +222,66 @@ export function MeshToIcon({
   }, [zoom, vertical, horizontal, src]);
 
   useEffect(() => {
+    document.body.classList.add("icon-capture");
+    return () => document.body.classList.remove("icon-capture");
+  }, []);
+
+  useEffect(() => {
     const el = viewerRef.current;
-    if (!el || !src || typeof el.toBlob !== "function") return;
+    if (!el || !src) return;
     let alive = true;
     let timer = 0;
-    const draw = async () => {
+    let pending = false;
+    let again = false;
+    const draw = () => {
+      if (!alive) return;
+      if (pending) {
+        again = true;
+        return;
+      }
+      const shot = grabVisible(el);
+      if (!shot) return;
+      pending = true;
       try {
-        const blob = await el.toBlob({ mimeType: "image/png" });
-        if (!alive || !blob) return;
-        const bitmap = await createImageBitmap(blob);
-        if (!alive) {
-          bitmap.close();
-          return;
+        const frame = composeIcon(shot, 512, optsRef.current);
+        paintFrame(frame, stageRef.current);
+        paintFrame(frame, previewRef.current);
+        if (alive) setFramed((value) => value || true);
+      } finally {
+        pending = false;
+        if (again && alive) {
+          again = false;
+          timer = window.setTimeout(draw, 30);
         }
-        const frame = composeIcon(bitmap, 512, optsRef.current);
-        bitmap.close();
-        for (const preview of [stageRef.current, previewRef.current]) {
-          const ctx = preview?.getContext("2d");
-          if (!ctx || !preview) continue;
-          ctx.clearRect(0, 0, preview.width, preview.height);
-          ctx.drawImage(frame, 0, 0, preview.width, preview.height);
-        }
-      } catch {
-        /* l’aperçu réessaiera au prochain mouvement */
       }
     };
     const schedule = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => void draw(), 60);
+      timer = window.setTimeout(draw, 40);
     };
     el.addEventListener("camera-change", schedule);
     el.addEventListener("load", schedule);
-    schedule();
+    const kick = window.setTimeout(schedule, 120);
     return () => {
       alive = false;
       window.clearTimeout(timer);
+      window.clearTimeout(kick);
       el.removeEventListener("camera-change", schedule);
       el.removeEventListener("load", schedule);
     };
   }, [src, zoom, vertical, horizontal, outline, color, thickness, shadow, opacity, blur, offsetY]);
 
-  async function framedIcon(size: number) {
+  function framedIcon(size: number) {
     const el = viewerRef.current;
-    if (!el || typeof el.toBlob !== "function") return null;
-    const blob = await el.toBlob({ mimeType: "image/png" });
-    const bitmap = await createImageBitmap(blob);
-    const frame = composeIcon(bitmap, size, opts);
-    bitmap.close();
-    return frame;
+    if (!el) return null;
+    const shot = grabVisible(el);
+    if (!shot) return null;
+    return composeIcon(shot, size, opts);
   }
 
   async function download() {
     try {
-      const frame = await framedIcon(resolution);
+      const frame = framedIcon(resolution);
       if (!frame) return;
       const link = document.createElement("a");
       link.href = frame.toDataURL("image/png");
@@ -257,7 +301,7 @@ export function MeshToIcon({
     setErr("");
     let dataUrl = "";
     try {
-      const frame = await framedIcon(resolution);
+      const frame = framedIcon(resolution);
       if (!frame) {
         setBusy(false);
         return;
@@ -304,7 +348,7 @@ export function MeshToIcon({
                   ref={(node) => {
                     viewerRef.current = node as ModelViewerEl | null;
                   }}
-                  className="icon-viewer"
+                  className={framed ? "icon-viewer is-hidden" : "icon-viewer"}
                   src={src}
                   camera-controls
                   disable-pan
@@ -320,7 +364,7 @@ export function MeshToIcon({
               <canvas ref={stageRef} className="icon-overlay" width={512} height={512} />
             </div>
             <div className="icon-preview-row">
-              <canvas ref={previewRef} className="icon-preview" width={512} height={512} />
+              <canvas ref={previewRef} className="icon-preview" width={256} height={256} />
               <p className="icon-hint">
                 Glisse le modèle pour le tourner. Le grand aperçu et la miniature montrent le contour
                 et l’ombre.

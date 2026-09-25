@@ -866,6 +866,12 @@ input:focus, textarea:focus, select:focus { border-color: var(--copper); }
   touch-action: none;
   z-index: 1;
 }
+.icon-viewer.is-hidden {
+  opacity: 0;
+}
+body.icon-capture model-viewer:not(.icon-viewer) {
+  display: none !important;
+}
 .icon-overlay {
   position: absolute;
   inset: 0;
@@ -883,6 +889,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--copper); }
   width: 128px;
   height: 128px;
   flex: 0 0 auto;
+  display: block;
   border-radius: 12px;
   background:
     linear-gradient(45deg, #e2dbd1 25%, transparent 25%),
