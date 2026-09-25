@@ -600,12 +600,15 @@ pub(crate) fn slugify(name: &str) -> String {
 
 const HUD_SECTION: &str = r#"
 ## HUD / UI
-Le pack est déjà dans le projet : `assets/ui/Main.rbxmx`, synchronisé par Rojo dans `ReplicatedStorage.Main` (ScreenGui). Ne redessine pas le HUD ni les menus.
+Le pack Essential UI est déjà dans le jeu, fichiers dans `assets/ui/pack/`. Rojo le place dans les vrais services. Ne le réinstalle pas, ne le déplace pas, ne redessine pas les menus.
 
-- `Main.HUD` : toujours visible. Frames `Left`, `Right`, `Notifications`.
-- `Main.Frames` : menus `Shop`, `Settings`, `Wheel`, `DailyRewards`, `TimeRewards`, `Codes`, `Confirm`, `Friends`, `Gifting`, `Group`.
+- `StarterGui.Main` : interface. `Main.HUD` (`Left`, `Right`, `Notifications`) reste visible. `Main.Frames` : `Shop`, `Settings`, `Wheel`, `DailyRewards`, `TimeRewards`, `Codes`, `Confirm`, `Friends`, `Gifting`, `Group`.
+- `StarterGui.Full` : autre écran du pack. `ReplicatedFirst` : écran de chargement.
+- `StarterPlayerScripts.Client` charge `Controllers`. `ServerScriptService.Server` charge `Services`.
+- `ReplicatedStorage.Configuration` : ids, icônes et textes (`Passes`, `Products`, `Packs`, `DailyRewards`, `WheelSpin`, `PlaytimeRewards`, `General`, `Promotion`).
+- Récompenses à adapter dans `ServerScriptService.Services` : `DailyRewardsService.RewardFunctions`, `PlaytimeRewardsService.RewardFunctions`, `WheelSpinService.RewardFunctions`, `MarketplaceService.ProductsRewards`, `PassesRewards`, `PacksRewards`.
 
-Au démarrage client, clone `ReplicatedStorage.Main` dans `PlayerGui`. Laisse `HUD` affiché. Garde les frames de `Frames` cachées (`Visible = false`) jusqu'au bouton qui les ouvre. Tu peux modifier textes, couleurs, positions et images. Ne renomme pas les frames et ne supprime pas la hiérarchie.
+Tu peux changer textes, couleurs, positions, images et ces fonctions de récompense. Garde les noms et la hiérarchie. Laisse `Packages`, `Cmdr` et les contrôleurs en place.
 "#;
 
 const ASSET_SECTION: &str = r#"
@@ -804,52 +807,273 @@ fn upsert_ref_section(current: &str, section: &str) -> String {
     }
 }
 
-fn ui_kit_source() -> Option<PathBuf> {
+fn essential_ui_source() -> Option<PathBuf> {
     let docs = dirs::document_dir()?;
-    [docs.join("UIs").join("Main.rbxmx"), docs.join("Lumen").join("ui").join("Main.rbxmx")]
-        .into_iter()
-        .find(|path| path.is_file())
+    [
+        docs.join("UIs").join("EssentialUI.rbxmx"),
+        docs.join("Lumen").join("ui").join("EssentialUI.rbxmx"),
+    ]
+    .into_iter()
+    .find(|path| path.is_file())
 }
 
-fn install_ui_kit(dir: &Path) -> Result<(), String> {
-    let dest = dir.join("assets").join("ui").join("Main.rbxmx");
-    if let Some(source) = ui_kit_source() {
-        fs::create_dir_all(dest.parent().unwrap()).map_err(|e| e.to_string())?;
-        let stale = fs::metadata(&dest).ok().map(|meta| meta.len())
-            != fs::metadata(&source).ok().map(|meta| meta.len());
-        if stale {
-            fs::copy(&source, &dest).map_err(|e| format!("Copie du pack UI : {e}"))?;
-        }
-        if let Some(docs) = dirs::document_dir() {
-            let canon = docs.join("Lumen").join("ui").join("Main.rbxmx");
-            if canon != source && !canon.is_file() {
-                if let Some(parent) = canon.parent() {
-                    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+fn service_dir_name(name: &str) -> Option<&'static str> {
+    match name {
+        "ReplicatedFirst" => Some("ReplicatedFirst"),
+        "ReplicatedStorage" => Some("ReplicatedStorage"),
+        "ServerScriptService" => Some("ServerScriptService"),
+        "StarterGui" => Some("StarterGui"),
+        "StarterPlayer>StarterPlayerScripts" => Some("StarterPlayerScripts"),
+        "Workspace" => Some("Workspace"),
+        "SoundService" => Some("SoundService"),
+        _ => None,
+    }
+}
+
+fn xml_attr<'a>(line: &'a str, key: &str) -> Option<&'a str> {
+    let pat = format!("{key}=\"");
+    let start = line.find(&pat)? + pat.len();
+    let rest = line.get(start..)?;
+    let end = rest.find('"')?;
+    rest.get(..end)
+}
+
+fn xml_text_name(line: &str) -> Option<String> {
+    let open = "<string name=\"Name\">";
+    let start = line.find(open)? + open.len();
+    let rest = line.get(start..)?;
+    let end = rest.find("</string>")?;
+    Some(
+        rest[..end]
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\""),
+    )
+}
+
+fn safe_model_name(name: &str, class: &str) -> String {
+    let mut cleaned: String = name
+        .chars()
+        .map(|c| match c {
+            '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
+        .collect();
+    cleaned = cleaned.trim().trim_end_matches(['.', ' ']).to_string();
+    if cleaned.is_empty() {
+        class.to_string()
+    } else {
+        cleaned
+    }
+}
+
+struct OpenItem {
+    start: usize,
+    class: String,
+    name: String,
+}
+
+fn split_essential_ui(source: &Path, dest: &Path) -> Result<(), String> {
+    if dest.exists() {
+        fs::remove_dir_all(dest).map_err(|e| e.to_string())?;
+    }
+    fs::create_dir_all(dest).map_err(|e| e.to_string())?;
+    let text = fs::read_to_string(source).map_err(|e| format!("Lecture du pack UI : {e}"))?;
+    let lines: Vec<&str> = text.lines().collect();
+    let mut stack: Vec<OpenItem> = Vec::new();
+    let mut used: std::collections::HashMap<String, std::collections::HashSet<String>> =
+        std::collections::HashMap::new();
+
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("<Item ") {
+            stack.push(OpenItem {
+                start: index,
+                class: xml_attr(trimmed, "class").unwrap_or("Folder").to_string(),
+                name: String::new(),
+            });
+        } else if let Some(item) = stack.last_mut() {
+            if item.name.is_empty() {
+                if let Some(name) = xml_text_name(line) {
+                    item.name = name;
                 }
-                fs::copy(&source, &canon).map_err(|e| e.to_string())?;
+            }
+        }
+        if trimmed.starts_with("</Item>") {
+            let depth = stack.len();
+            let Some(item) = stack.pop() else {
+                continue;
+            };
+            let service = if depth == 3 {
+                stack.last().and_then(|parent| service_dir_name(&parent.name))
+            } else if depth == 2 && item.name == "READ ME" {
+                Some("ReplicatedStorage")
+            } else {
+                None
+            };
+            if let Some(service) = service {
+                let body = lines[item.start..=index].join("\n");
+                let mut file_name = safe_model_name(&item.name, &item.class);
+                let taken = used.entry(service.to_string()).or_default();
+                if !taken.insert(file_name.clone()) {
+                    file_name = format!("{file_name}_{}", item.class);
+                    taken.insert(file_name.clone());
+                }
+                let dir = dest.join(service);
+                fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+                let xml = format!("<roblox version=\"4\">\n{body}\n</roblox>\n");
+                fs::write(dir.join(format!("{file_name}.rbxmx")), xml).map_err(|e| e.to_string())?;
             }
         }
     }
-    if !dest.is_file() {
-        return Ok(());
+    if !dest.join("StarterGui").join("Main.rbxmx").is_file() {
+        return Err("Le pack UI ne contient pas StarterGui.Main".into());
     }
+    Ok(())
+}
+
+fn copy_dir_all(src: &Path, dest: &Path) -> Result<(), String> {
+    fs::create_dir_all(dest).map_err(|e| e.to_string())?;
+    for entry in fs::read_dir(src).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let from = entry.path();
+        let to = dest.join(entry.file_name());
+        if from.is_dir() {
+            copy_dir_all(&from, &to)?;
+        } else {
+            fs::copy(&from, &to).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+fn prepare_ui_pack() -> Result<Option<PathBuf>, String> {
+    let Some(docs) = dirs::document_dir() else {
+        return Ok(None);
+    };
+    let pack = docs.join("Lumen").join("ui").join("pack");
+    let Some(source) = essential_ui_source() else {
+        return Ok(pack.join("StarterGui").join("Main.rbxmx").is_file().then_some(pack));
+    };
+    let canon = docs.join("Lumen").join("ui").join("EssentialUI.rbxmx");
+    if canon != source {
+        if let Some(parent) = canon.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let same = fs::metadata(&canon).ok().map(|meta| meta.len())
+            == fs::metadata(&source).ok().map(|meta| meta.len());
+        if !same {
+            fs::copy(&source, &canon).map_err(|e| e.to_string())?;
+        }
+    }
+    let size = fs::metadata(&source).map_err(|e| e.to_string())?.len();
+    let stamp_path = docs.join("Lumen").join("ui").join("pack-size.txt");
+    let current = fs::read_to_string(&stamp_path)
+        .ok()
+        .and_then(|text| text.trim().parse::<u64>().ok());
+    if current != Some(size) || !pack.join("StarterGui").join("Main.rbxmx").is_file() {
+        split_essential_ui(&source, &pack)?;
+        fs::write(&stamp_path, size.to_string()).map_err(|e| e.to_string())?;
+    }
+    Ok(Some(pack))
+}
+
+fn mount_service(
+    tree: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    class_name: &str,
+    rel: &str,
+) {
+    let node = tree
+        .entry(key.to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if let Some(obj) = node.as_object_mut() {
+        obj.entry("$className".to_string())
+            .or_insert_with(|| serde_json::json!(class_name));
+        obj.insert("$path".to_string(), serde_json::json!(rel));
+    }
+}
+
+fn install_ui_kit(dir: &Path) -> Result<(), String> {
+    let Some(pack) = prepare_ui_pack()? else {
+        return Ok(());
+    };
+    let dest = dir.join("assets").join("ui").join("pack");
+    let docs = dirs::document_dir();
+    let stamp = docs
+        .as_ref()
+        .and_then(|root| fs::read_to_string(root.join("Lumen").join("ui").join("pack-size.txt")).ok())
+        .unwrap_or_default();
+    let project_stamp = dir.join("assets").join("ui").join("pack-size.txt");
+    let installed = fs::read_to_string(&project_stamp).unwrap_or_default();
+    if installed.trim() != stamp.trim() || !dest.join("StarterGui").join("Main.rbxmx").is_file() {
+        if dest.exists() {
+            fs::remove_dir_all(&dest).map_err(|e| e.to_string())?;
+        }
+        copy_dir_all(&pack, &dest)?;
+        if let Some(parent) = project_stamp.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::write(&project_stamp, stamp.trim()).map_err(|e| e.to_string())?;
+    }
+    let _ = fs::remove_file(dir.join("assets").join("ui").join("Main.rbxmx"));
+
     let project = dir.join("default.project.json");
     if !project.is_file() {
         return Ok(());
     }
     let mut value: serde_json::Value =
         serde_json::from_str(&read_json_text(&project)?).map_err(|e| e.to_string())?;
-    let Some(storage) = value.pointer_mut("/tree/ReplicatedStorage").and_then(|v| v.as_object_mut())
-    else {
+    let Some(tree) = value.get_mut("tree").and_then(|node| node.as_object_mut()) else {
         return Ok(());
     };
-    if storage.contains_key("Main") {
-        return Ok(());
+    if let Some(storage) = tree.get_mut("ReplicatedStorage").and_then(|node| node.as_object_mut()) {
+        let legacy = storage
+            .get("Main")
+            .and_then(|main| main.get("$path"))
+            .and_then(|path| path.as_str())
+            == Some("assets/ui/Main.rbxmx");
+        if legacy {
+            storage.remove("Main");
+        }
     }
-    storage.insert(
-        "Main".into(),
-        serde_json::json!({ "$path": "assets/ui/Main.rbxmx" }),
-    );
+    let mounts = [
+        ("ReplicatedFirst", "ReplicatedFirst", "assets/ui/pack/ReplicatedFirst"),
+        ("ReplicatedStorage", "ReplicatedStorage", "assets/ui/pack/ReplicatedStorage"),
+        ("ServerScriptService", "ServerScriptService", "assets/ui/pack/ServerScriptService"),
+        ("StarterGui", "StarterGui", "assets/ui/pack/StarterGui"),
+        ("Workspace", "Workspace", "assets/ui/pack/Workspace"),
+        ("SoundService", "SoundService", "assets/ui/pack/SoundService"),
+    ];
+    for (key, class_name, rel) in mounts {
+        if dest.join(key).is_dir() {
+            mount_service(tree, key, class_name, rel);
+        }
+    }
+    if dest.join("StarterPlayerScripts").is_dir() {
+        let player = tree
+            .entry("StarterPlayer".to_string())
+            .or_insert_with(|| serde_json::json!({ "$className": "StarterPlayer" }));
+        if let Some(player) = player.as_object_mut() {
+            player
+                .entry("$className".to_string())
+                .or_insert_with(|| serde_json::json!("StarterPlayer"));
+            let scripts = player
+                .entry("StarterPlayerScripts".to_string())
+                .or_insert_with(|| serde_json::json!({}));
+            if let Some(scripts) = scripts.as_object_mut() {
+                scripts
+                    .entry("$className".to_string())
+                    .or_insert_with(|| serde_json::json!("StarterPlayerScripts"));
+                scripts.insert(
+                    "$path".to_string(),
+                    serde_json::json!("assets/ui/pack/StarterPlayerScripts"),
+                );
+            }
+        }
+    }
     fs::write(
         &project,
         serde_json::to_string_pretty(&value).map_err(|e| e.to_string())? + "\n",
@@ -1005,5 +1229,46 @@ pub fn read_reference_file(
     let text = fs::read_to_string(&canon)
         .map_err(|_| "Ce fichier n’est pas du texte".to_string())?;
     Ok((other, text))
+}
+
+#[cfg(test)]
+mod ui_pack_tests {
+    use super::*;
+
+    #[test]
+    fn splits_a_service_child() {
+        let dir = std::env::temp_dir().join("lumen-ui-pack-test");
+        let source = dir.join("pack.rbxmx");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            &source,
+            r#"<roblox version="4">
+  <Item class="Folder" referent="0">
+    <Properties>
+      <string name="Name">EssentialUI_V1.05</string>
+    </Properties>
+    <Item class="Folder" referent="1">
+      <Properties>
+        <string name="Name">StarterGui</string>
+      </Properties>
+      <Item class="ScreenGui" referent="2">
+        <Properties>
+          <string name="Name">Main</string>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+</roblox>
+"#,
+        )
+        .unwrap();
+        let dest = dir.join("out");
+        split_essential_ui(&source, &dest).unwrap();
+        let main = fs::read_to_string(dest.join("StarterGui").join("Main.rbxmx")).unwrap();
+        assert!(main.contains("ScreenGui"));
+        assert!(main.contains(">Main</string>"));
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
 
