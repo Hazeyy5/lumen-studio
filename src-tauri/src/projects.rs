@@ -600,17 +600,15 @@ pub(crate) fn slugify(name: &str) -> String {
 
 const HUD_SECTION: &str = r#"
 ## HUD / UI
-Le pack Essential UI est dans chaque projet, fichiers dans `assets/ui/pack/`. Rojo le place dans les services. Il n'y a pas d'écran de chargement : n'en ajoute pas, et n'ajoute rien dans `ReplicatedFirst`.
+Le pack Essential UI est une réserve, dans `assets/ui/pack/`. Il n'est pas branché au jeu. Ne le synchronise pas dans Studio, et n'ajoute pas ses ScreenGui, scripts ou `ReplicatedFirst`, tant que l'utilisateur ne le demande pas. S'il est déjà dans le jeu sans qu'on te l'ait demandé, retire-le et laisse l'UI déjà écrite dans `src/client`.
 
-Sers-t'en pour l'interface. Si l'utilisateur dit de t'en inspirer, reprends le layout, les couleurs ou un seul menu, puis adapte. S'il dit de l'utiliser, garde les frames et les contrôleurs de ce menu.
+Lis `assets/ui/pack/StarterGui/Main.rbxmx` pour voir les écrans. `Main.HUD` : `Left`, `Right`, `Notifications`. `Main.Frames` : `Shop`, `Settings`, `Wheel`, `DailyRewards`, `TimeRewards`, `Codes`, `Confirm`, `Friends`, `Gifting`, `Group`. `StarterGui/Full.rbxmx` est l'autre écran. Les contrôleurs sont dans `assets/ui/pack/StarterPlayerScripts/`, le serveur dans `assets/ui/pack/ServerScriptService/`.
 
-- `StarterGui.Main` : interface. `Main.HUD` (`Left`, `Right`, `Notifications`) reste visible. `Main.Frames` : `Shop`, `Settings`, `Wheel`, `DailyRewards`, `TimeRewards`, `Codes`, `Confirm`, `Friends`, `Gifting`, `Group`.
-- `StarterGui.Full` : autre écran du pack.
-- `StarterPlayerScripts.Client` charge `Controllers`. `ServerScriptService.Server` charge `Services`.
-- `ReplicatedStorage.Configuration` : ids, icônes et textes (`Passes`, `Products`, `Packs`, `DailyRewards`, `WheelSpin`, `PlaytimeRewards`, `General`, `Promotion`).
-- Récompenses à adapter dans `ServerScriptService.Services` : `DailyRewardsService.RewardFunctions`, `PlaytimeRewardsService.RewardFunctions`, `WheelSpinService.RewardFunctions`, `MarketplaceService.ProductsRewards`, `PassesRewards`, `PacksRewards`.
+- « Inspire-toi de X » : reprends le layout, les couleurs ou la structure de cet écran, et adapte l'UI déjà dans le projet. Ne copie pas le pack dans le jeu.
+- « Garde X du pack » : copie seulement cet écran, et le contrôleur qui va avec, dans le jeu. Laisse le reste de côté.
+- Pas d'écran de chargement.
 
-Tu peux changer textes, couleurs, positions, images et ces fonctions de récompense. Si tu modifies un écran du pack, garde ses noms. Laisse `Packages` et `Cmdr` en place.
+`ReplicatedStorage/Configuration` décrit les ids, icônes et textes. Les récompenses sont dans `ServerScriptService/Services` (`RewardFunctions`, `ProductsRewards`, `PassesRewards`, `PacksRewards`). Ne les branche que si l'écran correspondant est gardé.
 "#;
 
 const ASSET_SECTION: &str = r#"
@@ -981,19 +979,12 @@ fn prepare_ui_pack() -> Result<Option<PathBuf>, String> {
     Ok(Some(pack))
 }
 
-fn mount_service(
-    tree: &mut serde_json::Map<String, serde_json::Value>,
-    key: &str,
-    class_name: &str,
-    rel: &str,
-) {
-    let node = tree
-        .entry(key.to_string())
-        .or_insert_with(|| serde_json::json!({}));
-    if let Some(obj) = node.as_object_mut() {
-        obj.entry("$className".to_string())
-            .or_insert_with(|| serde_json::json!(class_name));
-        obj.insert("$path".to_string(), serde_json::json!(rel));
+fn clear_pack_path(node: &mut serde_json::Value, rel: &str) {
+    let Some(obj) = node.as_object_mut() else {
+        return;
+    };
+    if obj.get("$path").and_then(|path| path.as_str()) == Some(rel) {
+        obj.remove("$path");
     }
 }
 
@@ -1050,38 +1041,20 @@ fn install_ui_kit(dir: &Path) -> Result<(), String> {
     {
         tree.remove("ReplicatedFirst");
     }
-    let mounts = [
-        ("ReplicatedStorage", "ReplicatedStorage", "assets/ui/pack/ReplicatedStorage"),
-        ("ServerScriptService", "ServerScriptService", "assets/ui/pack/ServerScriptService"),
-        ("StarterGui", "StarterGui", "assets/ui/pack/StarterGui"),
-        ("Workspace", "Workspace", "assets/ui/pack/Workspace"),
-        ("SoundService", "SoundService", "assets/ui/pack/SoundService"),
-    ];
-    for (key, class_name, rel) in mounts {
-        if dest.join(key).is_dir() {
-            mount_service(tree, key, class_name, rel);
+    for (key, rel) in [
+        ("ReplicatedStorage", "assets/ui/pack/ReplicatedStorage"),
+        ("ServerScriptService", "assets/ui/pack/ServerScriptService"),
+        ("StarterGui", "assets/ui/pack/StarterGui"),
+        ("Workspace", "assets/ui/pack/Workspace"),
+        ("SoundService", "assets/ui/pack/SoundService"),
+    ] {
+        if let Some(node) = tree.get_mut(key) {
+            clear_pack_path(node, rel);
         }
     }
-    if dest.join("StarterPlayerScripts").is_dir() {
-        let player = tree
-            .entry("StarterPlayer".to_string())
-            .or_insert_with(|| serde_json::json!({ "$className": "StarterPlayer" }));
-        if let Some(player) = player.as_object_mut() {
-            player
-                .entry("$className".to_string())
-                .or_insert_with(|| serde_json::json!("StarterPlayer"));
-            let scripts = player
-                .entry("StarterPlayerScripts".to_string())
-                .or_insert_with(|| serde_json::json!({}));
-            if let Some(scripts) = scripts.as_object_mut() {
-                scripts
-                    .entry("$className".to_string())
-                    .or_insert_with(|| serde_json::json!("StarterPlayerScripts"));
-                scripts.insert(
-                    "$path".to_string(),
-                    serde_json::json!("assets/ui/pack/StarterPlayerScripts"),
-                );
-            }
+    if let Some(player) = tree.get_mut("StarterPlayer").and_then(|node| node.as_object_mut()) {
+        if let Some(scripts) = player.get_mut("StarterPlayerScripts") {
+            clear_pack_path(scripts, "assets/ui/pack/StarterPlayerScripts");
         }
     }
     fs::write(
