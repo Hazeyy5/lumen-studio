@@ -392,6 +392,8 @@ pub fn write_rbxts_layout(dir: &Path) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
+    install_ui_kit(dir)?;
+
     fs::write(
         dir.join(".gitignore"),
         "node_modules\nout\ninclude\n.lumen-swarm.json\n.lumen.json\n",
@@ -597,11 +599,13 @@ pub(crate) fn slugify(name: &str) -> String {
 }
 
 const HUD_SECTION: &str = r#"
-## HUD / UI (style cartoon Roblox)
-Tous les agents suivent le même langage visuel : contours noirs épais, coins ronds, couleurs saturées, FredokaOne, boutons 64 px.
-Rail gauche (Shop / Lucky / Collect / Rebirth), barre bas-gauche (Lvl, or, jauge), pastille multiplicateur, boutique carte blanche + bandeau rouge SHOP.
-Code HUD dans `src/client/` (`ui.ts`, `hud.ts`, `shop.ts`). Enrichir, ne jamais aplatir en gris.
-Si l'utilisateur demande de s'inspirer d'une capture : `node tools/lumen-asset.mjs search inspiration hud` puis `get INS-xxxx`, Read l'image dans `assets/inspiration/`, et recrée une UI originale dans le même esprit.
+## HUD / UI
+Le pack est déjà dans le projet : `assets/ui/Main.rbxmx`, synchronisé par Rojo dans `ReplicatedStorage.Main` (ScreenGui). Ne redessine pas le HUD ni les menus.
+
+- `Main.HUD` : toujours visible. Frames `Left`, `Right`, `Notifications`.
+- `Main.Frames` : menus `Shop`, `Settings`, `Wheel`, `DailyRewards`, `TimeRewards`, `Codes`, `Confirm`, `Friends`, `Gifting`, `Group`.
+
+Au démarrage client, clone `ReplicatedStorage.Main` dans `PlayerGui`. Laisse `HUD` affiché. Garde les frames de `Frames` cachées (`Visible = false`) jusqu'au bouton qui les ouvre. Tu peux modifier textes, couleurs, positions et images. Ne renomme pas les frames et ne supprime pas la hiérarchie.
 "#;
 
 const ASSET_SECTION: &str = r#"
@@ -663,6 +667,7 @@ node tools/lumen-ref.mjs cat "Nom du projet" src/client/ui.ts
 }
 
 pub fn write_agent_bridge(dir: &Path) -> Result<(), String> {
+    install_ui_kit(dir)?;
     fs::create_dir_all(dir.join("tools")).map_err(|e| e.to_string())?;
     fs::create_dir_all(dir.join("assets").join("images")).map_err(|e| e.to_string())?;
     fs::create_dir_all(dir.join("assets").join("meshes")).map_err(|e| e.to_string())?;
@@ -799,9 +804,74 @@ fn upsert_ref_section(current: &str, section: &str) -> String {
     }
 }
 
+fn ui_kit_source() -> Option<PathBuf> {
+    let docs = dirs::document_dir()?;
+    [docs.join("UIs").join("Main.rbxmx"), docs.join("Lumen").join("ui").join("Main.rbxmx")]
+        .into_iter()
+        .find(|path| path.is_file())
+}
+
+fn install_ui_kit(dir: &Path) -> Result<(), String> {
+    let dest = dir.join("assets").join("ui").join("Main.rbxmx");
+    if let Some(source) = ui_kit_source() {
+        fs::create_dir_all(dest.parent().unwrap()).map_err(|e| e.to_string())?;
+        let stale = fs::metadata(&dest).ok().map(|meta| meta.len())
+            != fs::metadata(&source).ok().map(|meta| meta.len());
+        if stale {
+            fs::copy(&source, &dest).map_err(|e| format!("Copie du pack UI : {e}"))?;
+        }
+        if let Some(docs) = dirs::document_dir() {
+            let canon = docs.join("Lumen").join("ui").join("Main.rbxmx");
+            if canon != source && !canon.is_file() {
+                if let Some(parent) = canon.parent() {
+                    fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+                }
+                fs::copy(&source, &canon).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    if !dest.is_file() {
+        return Ok(());
+    }
+    let project = dir.join("default.project.json");
+    if !project.is_file() {
+        return Ok(());
+    }
+    let mut value: serde_json::Value =
+        serde_json::from_str(&read_json_text(&project)?).map_err(|e| e.to_string())?;
+    let Some(storage) = value.pointer_mut("/tree/ReplicatedStorage").and_then(|v| v.as_object_mut())
+    else {
+        return Ok(());
+    };
+    if storage.contains_key("Main") {
+        return Ok(());
+    }
+    storage.insert(
+        "Main".into(),
+        serde_json::json!({ "$path": "assets/ui/Main.rbxmx" }),
+    );
+    fs::write(
+        &project,
+        serde_json::to_string_pretty(&value).map_err(|e| e.to_string())? + "\n",
+    )
+    .map_err(|e| e.to_string())
+}
+
 fn upsert_hud_section(current: &str) -> String {
-    if current.contains("## HUD / UI") {
-        return current.to_string();
+    let section = HUD_SECTION.trim_start();
+    if let Some(start) = current.find("## HUD / UI") {
+        let after = &current[start..];
+        let end = after
+            .find('\n')
+            .and_then(|nl| after[nl + 1..].find("\n## ").map(|i| start + nl + 1 + i))
+            .unwrap_or(current.len());
+        let before = current[..start].trim_end();
+        let rest = current[end..].trim_start();
+        return if rest.is_empty() {
+            format!("{before}\n\n{section}\n")
+        } else {
+            format!("{before}\n\n{section}\n{rest}")
+        };
     }
     if let Some(start) = current.find("## Assets") {
         let before = current[..start].trim_end();
