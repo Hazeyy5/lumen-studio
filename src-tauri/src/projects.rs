@@ -609,6 +609,8 @@ Lis `assets/ui/pack/StarterGui/Main.rbxmx` pour voir les écrans. `Main.HUD` : `
 - Pas d'écran de chargement.
 
 `ReplicatedStorage/Configuration` décrit les ids, icônes et textes. Les récompenses sont dans `ServerScriptService/Services` (`RewardFunctions`, `ProductsRewards`, `PassesRewards`, `PacksRewards`). Ne les branche que si l'écran correspondant est gardé.
+
+Si le pack est encore affiché dans Studio alors qu'il n'est plus dans Rojo, ne demande pas à l'utilisateur de le supprimer à la main. Lance `node tools/lumen-studio.mjs drop-pack`. Le plugin Lumen retire les écrans et scripts du pack dans la place ouverte. L'UI déjà écrite dans `src/client` reste.
 "#;
 
 const ASSET_SECTION: &str = r#"
@@ -695,6 +697,11 @@ pub fn write_agent_bridge(dir: &Path) -> Result<(), String> {
     fs::write(
         dir.join("tools").join("lumen-ref.mjs"),
         include_str!("../resources/lumen-ref.mjs"),
+    )
+    .map_err(|e| e.to_string())?;
+    fs::write(
+        dir.join("tools").join("lumen-studio.mjs"),
+        include_str!("../resources/lumen-studio.mjs"),
     )
     .map_err(|e| e.to_string())?;
 

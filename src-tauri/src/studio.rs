@@ -109,7 +109,30 @@ pub fn spawn_server(app: AppHandle, state: StudioState, offer: OfferState) {
             if url == "/offer" && method == tiny_http::Method::Get {
                 let mut snap = offer.lock().unwrap().clone();
                 snap.want_textures = crate::textures::want_studio_scan();
-                let _ = request.respond(json_ok(serde_json::to_string(&snap).unwrap_or_else(|_| "{}".into())));
+                let mut value = serde_json::to_value(&snap).unwrap_or_else(|_| serde_json::json!({}));
+                let drop_pack = !snap.project_path.is_empty()
+                    && PathBuf::from(&snap.project_path)
+                        .join("assets")
+                        .join("ui")
+                        .join("drop-pack")
+                        .is_file();
+                if let Some(obj) = value.as_object_mut() {
+                    obj.insert("dropPack".into(), serde_json::json!(drop_pack));
+                }
+                let _ = request.respond(json_ok(value.to_string()));
+                continue;
+            }
+
+            if url == "/studio/pack-dropped" && method == tiny_http::Method::Post {
+                let path = {
+                    let guard = offer.lock().unwrap();
+                    PathBuf::from(&guard.project_path)
+                        .join("assets")
+                        .join("ui")
+                        .join("drop-pack")
+                };
+                let _ = fs::remove_file(path);
+                let _ = request.respond(json_ok("{\"ok\":true}".into()));
                 continue;
             }
 
@@ -664,6 +687,125 @@ button.Click:Connect(function()
 	end
 end)
 
+local function kill(inst, removed)
+	if inst then
+		inst:Destroy()
+		return removed + 1
+	end
+	return removed
+end
+
+local function child(parent, name)
+	if parent then
+		return parent:FindFirstChild(name)
+	end
+	return nil
+end
+
+local function sourceHas(inst, needle)
+	local ok, source = pcall(function()
+		return inst.Source
+	end)
+	return ok and type(source) == "string" and string.find(source, needle, 1, true) ~= nil
+end
+
+local function dropEssentialPack()
+	local ChangeHistoryService = game:GetService("ChangeHistoryService")
+	local ok, recording = ChangeHistoryService:TryBeginRecording("Lumen retire le pack UI", "Retrait du pack")
+	local removed = 0
+	local starterGui = game:GetService("StarterGui")
+	local main = child(starterGui, "Main")
+	if main and main:IsA("ScreenGui") and main:FindFirstChild("HUD") and main:FindFirstChild("Frames") then
+		removed = kill(main, removed)
+	end
+	local full = child(starterGui, "Full")
+	if full and full:IsA("ScreenGui") and full:FindFirstChild("PromptUi") then
+		removed = kill(full, removed)
+	end
+	local replicated = game:GetService("ReplicatedStorage")
+	local assets = child(replicated, "Assets")
+	if assets and assets:FindFirstChild("Confetti") then
+		removed = kill(assets, removed)
+	end
+	local packages = child(replicated, "Packages")
+	if packages and (packages:FindFirstChild("LemonSignal") or packages:FindFirstChild("Icon")) then
+		removed = kill(packages, removed)
+	end
+	local utils = child(replicated, "Utils")
+	if utils and utils:FindFirstChild("GlobalFunctions") and utils:FindFirstChild("Packets") then
+		removed = kill(utils, removed)
+	end
+	local config = child(replicated, "Configuration")
+	if config and config:FindFirstChild("WheelSpin") and config:FindFirstChild("DailyRewards") then
+		removed = kill(config, removed)
+	end
+	local readMe = child(replicated, "READ ME")
+	if readMe and readMe:IsA("ModuleScript") then
+		removed = kill(readMe, removed)
+	end
+	local server = game:GetService("ServerScriptService")
+	local serverScript = child(server, "Server")
+	if serverScript and serverScript:IsA("Script") and sourceHas(serverScript, "ServiceLoader") then
+		removed = kill(serverScript, removed)
+	end
+	local services = child(server, "Services")
+	if services and services:FindFirstChild("WheelSpinService") and services:FindFirstChild("DataService") then
+		removed = kill(services, removed)
+	end
+	local classes = child(server, "Classes")
+	if classes and classes:FindFirstChild("Replication") then
+		removed = kill(classes, removed)
+	end
+	local cmdr = child(server, "Cmdr")
+	if cmdr and cmdr:FindFirstChild("Commands") then
+		removed = kill(cmdr, removed)
+	end
+	local serverPackages = child(server, "Packages")
+	if serverPackages and serverPackages:FindFirstChild("ProfileStore") then
+		removed = kill(serverPackages, removed)
+	end
+	local serverUtils = child(server, "Utils")
+	if serverUtils and serverUtils:FindFirstChild("SafePlayerAdded") then
+		removed = kill(serverUtils, removed)
+	end
+	local scripts = game:GetService("StarterPlayer"):FindFirstChild("StarterPlayerScripts")
+	local client = child(scripts, "Client")
+	if client and client:IsA("LocalScript") and sourceHas(client, "ControllerLoader") then
+		removed = kill(client, removed)
+	end
+	local controllers = child(scripts, "Controllers")
+	if controllers and controllers:FindFirstChild("UiController") then
+		removed = kill(controllers, removed)
+	end
+	local clientUtils = child(scripts, "Utils")
+	if clientUtils and clientUtils:FindFirstChild("GlobalSignals") then
+		removed = kill(clientUtils, removed)
+	end
+	local leaderboard = workspace:FindFirstChild("Leaderboard")
+	if leaderboard and leaderboard:IsA("Model") and leaderboard:FindFirstChild("Lantern") then
+		removed = kill(leaderboard, removed)
+	end
+	if removed > 0 then
+		local sound = game:GetService("SoundService")
+		local music = child(sound, "Music")
+		if music and music:IsA("SoundGroup") then
+			removed = kill(music, removed)
+		end
+		local sfx = child(sound, "SFX")
+		if sfx and sfx:IsA("SoundGroup") then
+			removed = kill(sfx, removed)
+		end
+	end
+	if ok then
+		local operation = Enum.FinishRecordingOperation.Cancel
+		if removed > 0 then
+			operation = Enum.FinishRecordingOperation.Commit
+		end
+		ChangeHistoryService:FinishRecording(recording, operation)
+	end
+	return removed
+end
+
 task.spawn(function()
 	while true do
 		heartbeat()
@@ -672,6 +814,12 @@ task.spawn(function()
 		button:SetActive(serving == true)
 		if offer and offer.wantTextures then
 			jsonPost("/textures", { items = scanTextures() })
+		end
+		if offer and offer.dropPack then
+			local removed = dropEssentialPack()
+			if removed > 0 then
+				jsonPost("/studio/pack-dropped", { removed = removed })
+			end
 		end
 		if serving then
 			local gen = offer.generation or 0
