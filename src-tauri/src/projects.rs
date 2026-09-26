@@ -628,6 +628,8 @@ node tools/lumen-asset.mjs get TEX-0001
 node tools/lumen-asset.mjs get INS-0001
 node tools/lumen-asset.mjs publish VS-0124
 node tools/lumen-asset.mjs image "icône pièce d'or, style Roblox, PNG fond transparent"
+node tools/lumen-asset.mjs icon VS-0124
+node tools/lumen-asset.mjs icon assets/meshes/coffre.glb
 node tools/lumen-asset.mjs mesh "coffre low poly pour tycoon Roblox"
 node tools/lumen-asset.mjs blender assets/blender/crate.py Crate
 ```
@@ -636,6 +638,7 @@ node tools/lumen-asset.mjs blender assets/blender/crate.py Crate
 2. `search` / `propose` attendent le choix. Ensuite **un seul** `get` sur le code choisi. Ne get jamais les autres. La recherche ne contient pas d’ID Roblox.
 3. Pour l’utiliser : `get CODE` — Lumen notifie, l’utilisateur prévisualise et valide. Ensuite Image = `rbxassetid://…`. Mesh = `InsertService.LoadAsset` côté serveur (Model, pas MeshId).
 4. `image` / `mesh` seulement si la recherche est vide ou si l’utilisateur a cliqué Aucune. Si `status` dit `meshProvider: blender`, écris un script bpy dans `assets/blender/` puis `node tools/lumen-asset.mjs blender assets/blender/nom.py Titre` — pas Meshy. Les `image` d’icônes / props 2D : **PNG fond transparent**, jamais un fond uni.
+4b. Pour une icône **photographiée** depuis un modèle 3D déjà choisi (fichier `.glb` / `.gltf` ou code mesh) : `node tools/lumen-asset.mjs icon VS-0124` ou `icon assets/meshes/coffre.glb`. Lumen doit être ouvert, fenêtre non réduite. Ça reprend l’atelier Modèle vers icône (contour et ombre). Ce n’est pas `image`. Options : `--zoom 1.2`, `--vertical 0.2`, `--horizontal -0.3`, `--no-outline`, `--no-shadow`.
 5. Inspiration UI (`INS-xxxx`) : `search inspiration` (3 propositions, 1 choix), puis `get` — copie dans `assets/inspiration/`. Read l'image, reproduis l'esprit (layout/couleurs), jamais publish vers Roblox.
 6. Textures (`TEX-xxxx`) : `search texture brick --for "sol de la rampe"`. `get` puis colle `rbxassetid://…` (ou `rbxasset://…`) sur ImageLabel / Texture / Decal / MeshPart.TextureID. Si le JSON a `scaleType` (textures Studio importées) : `ImageLabel.ScaleType` + `TileSize = UDim2.new(...)`. Les IDs Studio importés dans la banque sont déjà publiés.
 "#;

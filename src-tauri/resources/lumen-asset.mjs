@@ -6,6 +6,8 @@
  * Usage:
  *   node tools/lumen-asset.mjs status
  *   node tools/lumen-asset.mjs image "icône pièce d'or, style Roblox, PNG fond transparent"
+ *   node tools/lumen-asset.mjs icon VS-0001
+ *   node tools/lumen-asset.mjs icon assets/meshes/coffre.glb
  *   node tools/lumen-asset.mjs mesh "coffre low poly pour tycoon Roblox"
  *   node tools/lumen-asset.mjs publish LUM-0001
  *   node tools/lumen-asset.mjs search palm
@@ -26,7 +28,7 @@ function fail(message) {
 
 function usage() {
   fail(
-    "Usage:\n  node tools/lumen-asset.mjs status\n  node tools/lumen-asset.mjs search [mesh|image|inspiration|texture] <mots> --for \"à quoi ça sert sur la map\"\n  node tools/lumen-asset.mjs propose VS-0001 VS-0002 --for \"décor au spawn\"\n  node tools/lumen-asset.mjs image <prompt>\n  node tools/lumen-asset.mjs mesh <prompt>\n  node tools/lumen-asset.mjs blender assets/blender/nom.py Titre\n  node tools/lumen-asset.mjs publish LUM-0001\n  node tools/lumen-asset.mjs get LUM-0001\n  node tools/lumen-asset.mjs get TEX-0001\n  node tools/lumen-asset.mjs get INS-0001",
+    "Usage:\n  node tools/lumen-asset.mjs status\n  node tools/lumen-asset.mjs search [mesh|image|inspiration|texture] <mots> --for \"à quoi ça sert sur la map\"\n  node tools/lumen-asset.mjs propose VS-0001 VS-0002 --for \"décor au spawn\"\n  node tools/lumen-asset.mjs image <prompt>\n  node tools/lumen-asset.mjs icon <VS-0001 | fichier.glb>\n  node tools/lumen-asset.mjs mesh <prompt>\n  node tools/lumen-asset.mjs blender assets/blender/nom.py Titre\n  node tools/lumen-asset.mjs publish LUM-0001\n  node tools/lumen-asset.mjs get LUM-0001\n  node tools/lumen-asset.mjs get TEX-0001\n  node tools/lumen-asset.mjs get INS-0001",
   );
 }
 
@@ -217,6 +219,77 @@ async function main() {
       console.log(`Ensuite uniquement : get ${json.chosen}`);
     } else {
       console.log("Aucune sélection. Ne fais pas de get.");
+    }
+    return;
+  }
+
+  if (cmd === "icon" || cmd === "icone" || cmd === "icône") {
+    const flags = new Set([
+      "--zoom",
+      "--vertical",
+      "--horizontal",
+      "--thickness",
+      "--color",
+      "--resolution",
+      "--opacity",
+      "--blur",
+      "--offset-y",
+    ]);
+    const modelParts = [];
+    const options = {
+      zoom: 1,
+      vertical: 0,
+      horizontal: 0,
+      thickness: 4,
+      color: "#111111",
+      resolution: 512,
+      opacity: 0.35,
+      blur: 16,
+      offsetY: 12,
+      outline: true,
+      shadow: true,
+    };
+    for (let i = 0; i < rest.length; i += 1) {
+      const token = rest[i];
+      const lower = String(token).toLowerCase();
+      if (lower === "--no-outline") {
+        options.outline = false;
+        continue;
+      }
+      if (lower === "--no-shadow") {
+        options.shadow = false;
+        continue;
+      }
+      if (flags.has(lower)) {
+        const value = rest[i + 1];
+        i += 1;
+        if (value == null) usage();
+        if (lower === "--color") options.color = value;
+        else if (lower === "--resolution") options.resolution = Number(value);
+        else if (lower === "--offset-y") options.offsetY = Number(value);
+        else options[lower.slice(2)] = Number(value);
+        continue;
+      }
+      modelParts.push(token);
+    }
+    const model = modelParts.join(" ").trim();
+    if (!model) usage();
+    console.error("Capture de l’icône dans Lumen — laisse la fenêtre ouverte…");
+    const json = await call("/icon", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectPath: process.env.LUMEN_PROJECT || process.cwd(),
+        model,
+        ...options,
+      }),
+    });
+    printAsset(json);
+    if (!json.robloxAssetId) {
+      fail(
+        json.publishError ||
+          "Icône créée dans Lumen mais pas publiée sur Roblox. Ajoute une clé Open Cloud (asset:read + asset:write) dans Réglages.",
+      );
     }
     return;
   }

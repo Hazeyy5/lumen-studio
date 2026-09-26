@@ -9,7 +9,7 @@ import { AgentTerminal } from "./AgentTerminal";
 import { AssetReviewHost } from "./AssetReview";
 import { AssetCode, AssetLightbox, bankImageSrc, lightboxFromBank, type LightboxAsset } from "./AssetLightbox";
 import { MeshPreview, MeshStill } from "./MeshPreview";
-import { ModelToIconPage } from "./MeshToIcon";
+import { AgentIconCapture, ModelToIconPage } from "./MeshToIcon";
 import { ptyBus } from "./ptyBus";
 import { imageBrief, imageFilesFromTransfer, savePastedFiles, type PastedImage } from "./pasteImage";
 import { applyTheme, readTheme, toggleTheme, type Theme } from "./theme";
@@ -230,6 +230,7 @@ export default function App() {
 
   return (
     <div className="app-root">
+      <AgentIconCapture />
       {updateBar}
     <div className="app">
       <aside className="sidebar">

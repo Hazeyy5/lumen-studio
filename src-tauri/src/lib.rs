@@ -82,6 +82,7 @@ pub fn run() {
             blender::detect_blender,
             blender::run_blender_mesh_cmd,
             assets::save_image_to_project,
+            agent_api::complete_icon_job,
             assets::save_pasted_image,
             assets::save_mesh_url,
             rojo::rojo_status,

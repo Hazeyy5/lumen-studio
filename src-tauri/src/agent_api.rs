@@ -1,6 +1,11 @@
 use serde::Serialize;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{mpsc, Mutex, OnceLock};
 use std::thread;
-use tauri::AppHandle;
+use std::time::Duration;
+use tauri::{AppHandle, Emitter};
+use uuid::Uuid;
 
 use crate::assets::{generate_image_for_project, generate_mesh_for_project, SavedAsset};
 use crate::blender::run_blender_mesh;
@@ -40,6 +45,119 @@ fn error_json(code: u16, message: &str) -> tiny_http::Response<std::io::Cursor<V
         code,
         serde_json::json!({ "error": message }).to_string(),
     )
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct IconJob {
+    id: String,
+    project_path: String,
+    model_path: String,
+    zoom: f64,
+    vertical: f64,
+    horizontal: f64,
+    outline: bool,
+    color: String,
+    thickness: f64,
+    shadow: bool,
+    opacity: f64,
+    blur: f64,
+    offset_y: f64,
+    resolution: u32,
+}
+
+fn icon_waiters() -> &'static Mutex<HashMap<String, mpsc::Sender<Result<String, String>>>> {
+    static WAITERS: OnceLock<Mutex<HashMap<String, mpsc::Sender<Result<String, String>>>>> =
+        OnceLock::new();
+    WAITERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn num_or(value: Option<&serde_json::Value>, fallback: f64) -> f64 {
+    value.and_then(|v| v.as_f64()).unwrap_or(fallback)
+}
+
+fn resolve_icon_model(project: &str, input: &str) -> Result<String, String> {
+    let input = input.trim();
+    if input.is_empty() {
+        return Err("Modèle manquant. Donne un fichier .glb ou un code VS- / LUM-.".into());
+    }
+    let direct = PathBuf::from(input);
+    let candidate = if direct.is_file() {
+        direct
+    } else {
+        let joined = PathBuf::from(project).join(input);
+        if joined.is_file() {
+            joined
+        } else if input.contains('-') || input.chars().all(|c| c.is_ascii_alphanumeric()) {
+            let item = get_bank_item(input)?;
+            let item = crate::catalog::materialize(&item)?;
+            let path = PathBuf::from(&item.path);
+            if !path.is_file() {
+                return Err("Ce modèle n’est pas un fichier local.".into());
+            }
+            path
+        } else {
+            return Err("Modèle introuvable. Donne un .glb du projet ou un code de la banque.".into());
+        }
+    };
+    let ext = candidate
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    if ext != "glb" && ext != "gltf" {
+        return Err(
+            "Le modèle vers icône lit un .glb ou un .gltf. Ce fichier a un autre format.".into(),
+        );
+    }
+    Ok(candidate.to_string_lossy().into())
+}
+
+fn render_model_icon(app: &AppHandle, job: IconJob) -> Result<String, String> {
+    let (tx, rx) = mpsc::channel();
+    {
+        let mut waiters = icon_waiters().lock().map_err(|e| e.to_string())?;
+        if !waiters.is_empty() {
+            return Err("Une capture d’icône est déjà en cours.".into());
+        }
+        waiters.insert(job.id.clone(), tx);
+    }
+    if let Err(err) = app.emit("lumen-icon", &job) {
+        icon_waiters().lock().ok().map(|mut waiters| waiters.remove(&job.id));
+        return Err(err.to_string());
+    }
+    match rx.recv_timeout(Duration::from_secs(70)) {
+        Ok(result) => result,
+        Err(_) => {
+            icon_waiters().lock().ok().map(|mut waiters| waiters.remove(&job.id));
+            Err("La capture a expiré. Laisse la fenêtre Lumen ouverte, pas réduite, puis réessaie.".into())
+        }
+    }
+}
+
+#[tauri::command]
+pub fn complete_icon_job(
+    id: String,
+    error: Option<String>,
+    result: Option<serde_json::Value>,
+) -> Result<(), String> {
+    let tx = icon_waiters()
+        .lock()
+        .map_err(|e| e.to_string())?
+        .remove(&id);
+    let Some(tx) = tx else {
+        return Ok(());
+    };
+    if let Some(message) = error.filter(|text| !text.trim().is_empty()) {
+        let _ = tx.send(Err(message));
+        return Ok(());
+    }
+    let Some(result) = result else {
+        let _ = tx.send(Err("Capture vide".into()));
+        return Ok(());
+    };
+    let _ = tx.send(Ok(result.to_string()));
+    Ok(())
 }
 
 fn query_param(url: &str, key: &str) -> Option<String> {
@@ -505,6 +623,74 @@ fn handle(app: AppHandle, mut request: tiny_http::Request) {
                     200,
                     serde_json::to_string(&asset).unwrap_or_else(|_| "{}".into()),
                 ));
+            }
+            Err(err) => {
+                let _ = request.respond(error_json(400, &err));
+            }
+        }
+        return;
+    }
+
+    if url == "/icon" && method == tiny_http::Method::Post {
+        let payload: serde_json::Value =
+            serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({}));
+        let project_path = payload
+            .get("projectPath")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        let model = payload
+            .get("model")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if project_path.is_empty() {
+            let _ = request.respond(error_json(400, "projectPath manquant"));
+            return;
+        }
+        if !Path::new(&project_path).is_dir() {
+            let _ = request.respond(error_json(400, "Projet introuvable"));
+            return;
+        }
+        let model_path = match resolve_icon_model(&project_path, &model) {
+            Ok(path) => path,
+            Err(err) => {
+                let _ = request.respond(error_json(400, &err));
+                return;
+            }
+        };
+        let resolution = payload
+            .get("resolution")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(512)
+            .clamp(256, 1024) as u32;
+        let job = IconJob {
+            id: Uuid::new_v4().to_string(),
+            project_path,
+            model_path,
+            zoom: num_or(payload.get("zoom"), 1.0).clamp(0.6, 2.4),
+            vertical: num_or(payload.get("vertical"), 0.0).clamp(-1.0, 1.0),
+            horizontal: num_or(payload.get("horizontal"), 0.0).clamp(-1.0, 1.0),
+            outline: payload.get("outline").and_then(|v| v.as_bool()).unwrap_or(true),
+            color: payload
+                .get("color")
+                .and_then(|v| v.as_str())
+                .filter(|s| s.starts_with('#') && s.len() == 7)
+                .unwrap_or("#111111")
+                .to_string(),
+            thickness: num_or(payload.get("thickness"), 4.0).clamp(0.0, 24.0),
+            shadow: payload.get("shadow").and_then(|v| v.as_bool()).unwrap_or(true),
+            opacity: num_or(payload.get("opacity"), 0.35).clamp(0.0, 1.0),
+            blur: num_or(payload.get("blur"), 16.0).clamp(0.0, 40.0),
+            offset_y: num_or(payload.get("offsetY"), 12.0).clamp(-40.0, 40.0),
+            resolution,
+        };
+        emit_progress(&app, "image", "Icône 2D depuis le modèle");
+        match render_model_icon(&app, job) {
+            Ok(body) => {
+                let _ = request.respond(json_response(200, body));
             }
             Err(err) => {
                 let _ = request.respond(error_json(400, &err));

@@ -19,6 +19,8 @@ node tools/lumen-asset.mjs get VS-0124
 node tools/lumen-asset.mjs get TEX-0001
 node tools/lumen-asset.mjs get INS-0001
 node tools/lumen-asset.mjs image "icône pièce d'or, style Roblox, PNG fond transparent"
+node tools/lumen-asset.mjs icon VS-0124
+node tools/lumen-asset.mjs icon assets/meshes/coffre.glb
 node tools/lumen-asset.mjs mesh "coffre low poly texturé pour tycoon Roblox"
 node tools/lumen-asset.mjs blender assets/blender/crate.py Crate
 node tools/lumen-asset.mjs publish VS-0124
@@ -33,6 +35,8 @@ Avant de créer un prop, une icône ou un mesh, **cherche dans la banque** (Lume
 3. La commande affiche `Choisi : VS-xxxx`. Ensuite **un seul** `get` sur ce code. **Ne get jamais les autres.**
 4. Si `Aucune sélection` : ne get rien, propose d’autres mots ou génère.
 5. Si l’utilisateur dit « montre / renvoie / je veux voir les propositions » : **ne reliste pas les IDs**. Relance `search` **ou** `propose` (jusqu’à 10 codes). Attends le choix, puis `get` uniquement le choisi.
+
+Pour une icône photographiée de ce modèle (contour et ombre de l’atelier, pas un dessin Gemini) : `node tools/lumen-asset.mjs icon VS-0124` ou `icon assets/meshes/nom.glb`. Lumen ouvert, fenêtre non réduite.
 
 Format terminal après choix :
 

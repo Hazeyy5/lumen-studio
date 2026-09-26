@@ -1,4 +1,5 @@
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { useEffect, useRef, useState } from "react";
 import { MeshStill } from "./MeshPreview";
@@ -674,5 +675,155 @@ export function ModelToIconPage({ projectPath }: { projectPath: string | null })
         />
       ) : null}
     </div>
+  );
+}
+
+type IconJob = {
+  id: string;
+  projectPath: string;
+  modelPath: string;
+  zoom: number;
+  vertical: number;
+  horizontal: number;
+  outline: boolean;
+  color: string;
+  thickness: number;
+  shadow: boolean;
+  opacity: number;
+  blur: number;
+  offsetY: number;
+  resolution: number;
+};
+
+async function finishIconJob(id: string, error: string | null, result: unknown) {
+  try {
+    await invoke("complete_icon_job", { id, error, result });
+  } catch {
+    /* la commande a déjà répondu */
+  }
+}
+
+export function AgentIconCapture() {
+  const [job, setJob] = useState<IconJob | null>(null);
+  const viewerRef = useRef<ModelViewerEl | null>(null);
+  const [src, setSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    let stop = () => {};
+    void listen<IconJob>("lumen-icon", (event) => {
+      setJob(event.payload);
+    }).then((unlisten) => {
+      stop = unlisten;
+    });
+    return () => stop();
+  }, []);
+
+  useEffect(() => {
+    if (!job) return;
+    document.body.classList.add("agent-icon-capture");
+    let revoke = false;
+    let url = "";
+    let alive = true;
+    void loadModel(job.modelPath).then((loaded) => {
+      if (!alive) {
+        if (loaded.revoke) URL.revokeObjectURL(loaded.url);
+        return;
+      }
+      revoke = loaded.revoke;
+      url = loaded.url;
+      setSrc(loaded.url);
+    }).catch((error) => {
+      void finishIconJob(job.id, String(error), null);
+      setJob(null);
+    });
+    return () => {
+      alive = false;
+      document.body.classList.remove("agent-icon-capture");
+      if (revoke) URL.revokeObjectURL(url);
+      setSrc(null);
+    };
+  }, [job]);
+
+  useEffect(() => {
+    if (!job || !src) return;
+    const el = viewerRef.current;
+    if (!el) return;
+    let alive = true;
+    let started = false;
+    const capture = async () => {
+      if (!alive || started) return;
+      started = true;
+      applyCamera(el, job.zoom, job.vertical, job.horizontal);
+      await new Promise((resolve) => window.setTimeout(resolve, 280));
+      let shot: HTMLCanvasElement | null = null;
+      for (let i = 0; i < 8 && alive; i += 1) {
+        shot = grabVisible(el);
+        if (shot && shot.width > 8) break;
+        shot = null;
+        await new Promise((resolve) => window.setTimeout(resolve, 200));
+      }
+      if (!alive) return;
+      if (!shot) {
+        await finishIconJob(job.id, "Le modèle n’a pas pu être capturé. Laisse la fenêtre Lumen ouverte.", null);
+        setJob(null);
+        return;
+      }
+      try {
+        const frame = composeIcon(shot, job.resolution, {
+          outline: job.outline,
+          color: job.color,
+          thickness: job.thickness,
+          shadow: job.shadow,
+          opacity: job.opacity,
+          blur: job.blur,
+          offsetY: job.offsetY,
+        });
+        const saved = await invoke("save_image_to_project", {
+          projectPath: job.projectPath,
+          dataUrl: frame.toDataURL("image/png"),
+          filename: `icone-${Date.now()}.png`,
+        });
+        await finishIconJob(job.id, null, saved);
+      } catch (error) {
+        await finishIconJob(job.id, String(error), null);
+      }
+      if (alive) setJob(null);
+    };
+    const onLoad = () => {
+      void capture();
+    };
+    el.addEventListener("load", onLoad);
+    const already = window.setTimeout(() => {
+      const loaded = (el as HTMLElement & { loaded?: boolean }).loaded;
+      if (loaded) void capture();
+    }, 400);
+    const giveUp = window.setTimeout(() => {
+      if (!started) {
+        void finishIconJob(job.id, "Le modèle n’a pas fini de s’afficher.", null);
+        setJob(null);
+      }
+    }, 50000);
+    return () => {
+      alive = false;
+      el.removeEventListener("load", onLoad);
+      window.clearTimeout(already);
+      window.clearTimeout(giveUp);
+    };
+  }, [job, src]);
+
+  if (!job || !src) return null;
+  return (
+    <model-viewer
+      ref={(node) => {
+        viewerRef.current = node as ModelViewerEl | null;
+      }}
+      className="agent-icon-viewer"
+      src={src}
+      interaction-prompt="none"
+      shadow-intensity="0"
+      environment-image="neutral"
+      min-camera-orbit="auto auto 0.2m"
+      max-camera-orbit="auto auto 24m"
+    />
   );
 }

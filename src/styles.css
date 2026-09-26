@@ -872,6 +872,20 @@ input:focus, textarea:focus, select:focus { border-color: var(--copper); }
 body.icon-capture model-viewer:not(.icon-viewer) {
   display: none !important;
 }
+.agent-icon-viewer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 512px;
+  height: 512px;
+  opacity: 0.02;
+  pointer-events: none;
+  z-index: 1;
+  background: transparent;
+}
+body.agent-icon-capture model-viewer:not(.agent-icon-viewer) {
+  display: none !important;
+}
 .icon-overlay {
   position: absolute;
   inset: 0;
