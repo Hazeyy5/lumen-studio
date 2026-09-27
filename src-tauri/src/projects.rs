@@ -598,6 +598,17 @@ pub(crate) fn slugify(name: &str) -> String {
         .join("-")
 }
 
+const CARS_SECTION: &str = r#"
+## Voitures
+Le pack est une réserve dans `assets/cars/`. Aucune voiture n'est dans la map tant que tu n'en poses pas une.
+
+`node tools/lumen-car.mjs list`
+
+`node tools/lumen-car.mjs place Civic`
+
+Ça ajoute uniquement ce modèle dans `Workspace.CarPack`. Au sync Rojo, il apparaît à la position enregistrée dans le pack : déplace-le avec `PivotTo` là où la route en a besoin. Ne place pas les autres. Noms : Jezko, Civic, Lambo, Challenge, McP, Lightning, LAF, Camaro, N, MCsena, Sport4RS, BugaciCiron, P, IS, AGTGT, Hurycane, NisnoP, Model, LightF, Muscle, Mc720S, LightningF, Sport, K, AudiR.
+"#;
+
 const HUD_SECTION: &str = r#"
 ## HUD / UI
 Le pack Essential UI est une réserve, dans `assets/ui/pack/`. Il n'est pas branché au jeu. Ne le synchronise pas dans Studio, et n'ajoute pas ses ScreenGui, scripts ou `ReplicatedFirst`, tant que l'utilisateur ne le demande pas. S'il est déjà dans le jeu sans qu'on te l'ait demandé, retire-le et laisse l'UI déjà écrite dans `src/client`.
@@ -676,6 +687,7 @@ node tools/lumen-ref.mjs cat "Nom du projet" src/client/ui.ts
 
 pub fn write_agent_bridge(dir: &Path) -> Result<(), String> {
     install_ui_kit(dir)?;
+    let has_cars = install_car_pack(dir)?;
     fs::create_dir_all(dir.join("tools")).map_err(|e| e.to_string())?;
     fs::create_dir_all(dir.join("assets").join("images")).map_err(|e| e.to_string())?;
     fs::create_dir_all(dir.join("assets").join("meshes")).map_err(|e| e.to_string())?;
@@ -707,6 +719,11 @@ pub fn write_agent_bridge(dir: &Path) -> Result<(), String> {
         include_str!("../resources/lumen-studio.mjs"),
     )
     .map_err(|e| e.to_string())?;
+    fs::write(
+        dir.join("tools").join("lumen-car.mjs"),
+        include_str!("../resources/lumen-car.mjs"),
+    )
+    .map_err(|e| e.to_string())?;
 
     let skill = include_str!("../resources/lumen-assets.SKILL.md");
     fs::write(
@@ -733,10 +750,13 @@ pub fn write_agent_bridge(dir: &Path) -> Result<(), String> {
     let agents_path = dir.join("AGENTS.md");
     if agents_path.exists() {
         let current = fs::read_to_string(&agents_path).unwrap_or_default();
-        let next = upsert_ref_section(
+        let mut next = upsert_ref_section(
             &upsert_hud_section(&upsert_asset_section(&current)),
             &ref_section_for(dir),
         );
+        if has_cars {
+            next = upsert_car_section(&next);
+        }
         if next != current {
             fs::write(&agents_path, next).map_err(|e| e.to_string())?;
         }
@@ -744,8 +764,9 @@ pub fn write_agent_bridge(dir: &Path) -> Result<(), String> {
         fs::write(
             &agents_path,
             format!(
-                "# Projet Lumen\n{}{}{}",
+                "# Projet Lumen\n{}{}{}{}",
                 HUD_SECTION,
+                if has_cars { CARS_SECTION } else { "" },
                 ref_section_for(dir),
                 ASSET_SECTION
             ),
@@ -943,6 +964,125 @@ fn split_essential_ui(source: &Path, dest: &Path) -> Result<(), String> {
     Ok(())
 }
 
+fn car_pack_source() -> Option<PathBuf> {
+    let docs = dirs::document_dir()?;
+    [
+        docs.join("UIs").join("cars_pack.rbxmx"),
+        docs.join("Lumen").join("cars").join("cars_pack.rbxmx"),
+    ]
+    .into_iter()
+    .find(|path| path.is_file())
+}
+
+fn split_car_pack(source: &Path, dest: &Path) -> Result<(), String> {
+    if dest.exists() {
+        fs::remove_dir_all(dest).map_err(|e| e.to_string())?;
+    }
+    fs::create_dir_all(dest).map_err(|e| e.to_string())?;
+    let text = fs::read_to_string(source).map_err(|e| format!("Lecture du pack voitures : {e}"))?;
+    let lines: Vec<&str> = text.lines().collect();
+    let mut stack: Vec<OpenItem> = Vec::new();
+    let mut used = std::collections::HashSet::new();
+    let mut count = 0u32;
+    for (index, line) in lines.iter().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with("<Item ") {
+            stack.push(OpenItem {
+                start: index,
+                class: xml_attr(trimmed, "class").unwrap_or("Model").to_string(),
+                name: String::new(),
+            });
+        } else if let Some(item) = stack.last_mut() {
+            if item.name.is_empty() {
+                if let Some(name) = xml_text_name(line) {
+                    item.name = name;
+                }
+            }
+        }
+        if trimmed.starts_with("</Item>") {
+            let depth = stack.len();
+            let Some(item) = stack.pop() else {
+                continue;
+            };
+            if depth == 2 && item.class == "Model" {
+                let body = lines[item.start..=index].join("\n");
+                let mut file_name = safe_model_name(&item.name, "car");
+                if !used.insert(file_name.clone()) {
+                    file_name = format!("{file_name}_{count}");
+                    used.insert(file_name.clone());
+                }
+                let xml = format!("<roblox version=\"4\">\n{body}\n</roblox>\n");
+                fs::write(dest.join(format!("{file_name}.rbxmx")), xml).map_err(|e| e.to_string())?;
+                count += 1;
+            }
+        }
+    }
+    if count == 0 {
+        return Err("Le pack voitures ne contient aucun modèle".into());
+    }
+    Ok(())
+}
+
+fn install_car_pack(dir: &Path) -> Result<bool, String> {
+    let Some(docs) = dirs::document_dir() else {
+        return Ok(dir.join("assets").join("cars").join("Civic.rbxmx").is_file());
+    };
+    let models = docs.join("Lumen").join("cars").join("models");
+    let Some(source) = car_pack_source() else {
+        if models.join("Civic.rbxmx").is_file() {
+            copy_cars_into(dir, &models)?;
+            return Ok(true);
+        }
+        return Ok(false);
+    };
+    let canon = docs.join("Lumen").join("cars").join("cars_pack.rbxmx");
+    if canon != source {
+        if let Some(parent) = canon.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        let same = fs::metadata(&canon).ok().map(|meta| meta.len())
+            == fs::metadata(&source).ok().map(|meta| meta.len());
+        if !same {
+            fs::copy(&source, &canon).map_err(|e| e.to_string())?;
+        }
+    }
+    let size = fs::metadata(&source).map_err(|e| e.to_string())?.len();
+    let stamp_path = docs.join("Lumen").join("cars").join("pack-size.txt");
+    let current = fs::read_to_string(&stamp_path)
+        .ok()
+        .and_then(|text| text.trim().parse::<u64>().ok());
+    if current != Some(size) || !models.join("Civic.rbxmx").is_file() {
+        split_car_pack(&source, &models)?;
+        fs::write(&stamp_path, size.to_string()).map_err(|e| e.to_string())?;
+    }
+    copy_cars_into(dir, &models)?;
+    Ok(dir.join("assets").join("cars").join("Civic.rbxmx").is_file())
+}
+
+fn copy_cars_into(dir: &Path, models: &Path) -> Result<(), String> {
+    if !models.is_dir() {
+        return Ok(());
+    }
+    let dest = dir.join("assets").join("cars");
+    let stamp = models
+        .parent()
+        .and_then(|parent| fs::read_to_string(parent.join("pack-size.txt")).ok())
+        .unwrap_or_default();
+    let project_stamp = dir.join("assets").join("cars-size.txt");
+    let installed = fs::read_to_string(&project_stamp).unwrap_or_default();
+    if installed.trim() != stamp.trim() || !dest.join("Civic.rbxmx").is_file() {
+        if dest.exists() {
+            fs::remove_dir_all(&dest).map_err(|e| e.to_string())?;
+        }
+        copy_dir_all(models, &dest)?;
+        if let Some(parent) = project_stamp.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::write(&project_stamp, stamp.trim()).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 fn copy_dir_all(src: &Path, dest: &Path) -> Result<(), String> {
     fs::create_dir_all(dest).map_err(|e| e.to_string())?;
     for entry in fs::read_dir(src).map_err(|e| e.to_string())? {
@@ -1100,6 +1240,35 @@ fn upsert_hud_section(current: &str) -> String {
         next.push('\n');
     }
     next.push_str(HUD_SECTION);
+    next
+}
+
+fn upsert_car_section(current: &str) -> String {
+    let section = CARS_SECTION.trim_start();
+    if let Some(start) = current.find("## Voitures") {
+        let after = &current[start..];
+        let end = after
+            .find('\n')
+            .and_then(|nl| after[nl + 1..].find("\n## ").map(|i| start + nl + 1 + i))
+            .unwrap_or(current.len());
+        let before = current[..start].trim_end();
+        let rest = current[end..].trim_start();
+        return if rest.is_empty() {
+            format!("{before}\n\n{section}\n")
+        } else {
+            format!("{before}\n\n{section}\n{rest}")
+        };
+    }
+    if let Some(start) = current.find("## Assets") {
+        let before = current[..start].trim_end();
+        let after = &current[start..];
+        return format!("{before}\n\n{section}\n\n{after}");
+    }
+    let mut next = current.to_string();
+    if !next.ends_with('\n') {
+        next.push('\n');
+    }
+    next.push_str(CARS_SECTION);
     next
 }
 
@@ -1261,6 +1430,36 @@ mod ui_pack_tests {
         let main = fs::read_to_string(dest.join("StarterGui").join("Main.rbxmx")).unwrap();
         assert!(main.contains("ScreenGui"));
         assert!(main.contains(">Main</string>"));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn splits_one_car() {
+        let dir = std::env::temp_dir().join("lumen-car-pack-test");
+        let source = dir.join("cars.rbxmx");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            &source,
+            r#"<roblox version="4">
+  <Item class="Folder" referent="0">
+    <Properties>
+      <string name="Name">Car Pack</string>
+    </Properties>
+    <Item class="Model" referent="1">
+      <Properties>
+        <string name="Name">Civic</string>
+      </Properties>
+    </Item>
+  </Item>
+</roblox>
+"#,
+        )
+        .unwrap();
+        let dest = dir.join("out");
+        split_car_pack(&source, &dest).unwrap();
+        let civic = fs::read_to_string(dest.join("Civic.rbxmx")).unwrap();
+        assert!(civic.contains(">Civic</string>"));
         let _ = fs::remove_dir_all(&dir);
     }
 }
