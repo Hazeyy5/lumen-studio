@@ -25,6 +25,13 @@ export type Project = {
   boundPlaceId?: number | null;
   referencePaths?: string[];
   referencePath?: string | null;
+  engine?: "uefn" | "";
+};
+
+export type UefnProject = {
+  name: string;
+  path: string;
+  linked: boolean;
 };
 
 export type AgentStatus = {

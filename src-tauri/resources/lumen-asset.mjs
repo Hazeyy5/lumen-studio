@@ -19,7 +19,26 @@
  *   node tools/lumen-asset.mjs get INS-0001
  */
 
+import { readdirSync } from "node:fs";
+
 const BASE = process.env.LUMEN_ASSET_URL || "http://127.0.0.1:17422";
+
+// Projet Fortnite : pas de publication Roblox, le fichier reste dans assets/ pour l'import UEFN.
+const UEFN = (() => {
+  try {
+    return readdirSync(process.env.LUMEN_PROJECT || process.cwd()).some((f) =>
+      f.toLowerCase().endsWith(".uefnproject"),
+    );
+  } catch {
+    return false;
+  }
+})();
+
+function relativeFile(path) {
+  const root = (process.env.LUMEN_PROJECT || process.cwd()).replace(/\\/g, "/").replace(/\/$/, "");
+  const file = String(path || "").replace(/\\/g, "/");
+  return file.toLowerCase().startsWith(root.toLowerCase() + "/") ? file.slice(root.length + 1) : file;
+}
 
 function fail(message) {
   console.error(message);
@@ -65,6 +84,18 @@ async function call(path, options) {
 
 function printAsset(json) {
   if (json.code) console.log(`ID ${json.code}`);
+  if (UEFN && !json.inspiration) {
+    const file = json.relativePath || relativeFile(json.localPath || json.path);
+    if (file) {
+      console.log(`Fichier pour UEFN : ${file}`);
+      console.log(
+        "Demande à l'utilisateur de le glisser dans le Content Browser de UEFN (dossier à préciser), puis Build Verse Code. Le nom Verse est dans le digest *-Assets.digest.verse.",
+      );
+    }
+    if (json.copyError) console.log(`Copie : ${json.copyError}`);
+    console.log(JSON.stringify(json, null, 2));
+    return;
+  }
   if (json.inspiration || json.publishSkipped) {
     if (json.relativePath) console.log(`Inspiration copiée : ${json.relativePath}`);
     else if (json.localPath) console.log(`Inspiration copiée : ${json.localPath}`);
@@ -285,7 +316,7 @@ async function main() {
       }),
     });
     printAsset(json);
-    if (!json.robloxAssetId) {
+    if (!UEFN && !json.robloxAssetId) {
       fail(
         json.publishError ||
           "Icône créée dans Lumen mais pas publiée sur Roblox. Ajoute une clé Open Cloud (asset:read + asset:write) dans Réglages.",
@@ -310,7 +341,7 @@ async function main() {
           title,
         }),
       });
-      if (json.code && !json.robloxAssetId) {
+      if (!UEFN && json.code && !json.robloxAssetId) {
         try {
           const published = await request("/publish", {
             method: "POST",
@@ -324,7 +355,7 @@ async function main() {
         }
       }
       printAsset(json);
-      if (!json.robloxAssetId) {
+      if (!UEFN && !json.robloxAssetId) {
         fail(
           json.publishError ||
             "Asset créé dans Lumen mais pas publié sur Roblox. Ajoute une clé Open Cloud (asset:read + asset:write) dans Réglages.",
@@ -340,7 +371,7 @@ async function main() {
         projectPath: process.cwd(),
       }),
     });
-    if (json.code && !json.robloxAssetId) {
+    if (!UEFN && json.code && !json.robloxAssetId) {
       try {
         const published = await request("/publish", {
           method: "POST",
@@ -354,7 +385,7 @@ async function main() {
       }
     }
     printAsset(json);
-    if (!json.robloxAssetId) {
+    if (!UEFN && !json.robloxAssetId) {
       fail(
         json.publishError ||
           "Asset créé dans Lumen mais pas publié sur Roblox. Ajoute une clé Open Cloud (asset:read + asset:write) dans Réglages.",
@@ -377,7 +408,7 @@ async function main() {
         title,
       }),
     });
-    if (json.code && !json.robloxAssetId) {
+    if (!UEFN && json.code && !json.robloxAssetId) {
       try {
         const published = await request("/publish", {
           method: "POST",
@@ -391,7 +422,7 @@ async function main() {
       }
     }
     printAsset(json);
-    if (!json.robloxAssetId) {
+    if (!UEFN && !json.robloxAssetId) {
       fail(
         json.publishError ||
           "Asset créé dans Lumen mais pas publié sur Roblox. Ajoute une clé Open Cloud (asset:read + asset:write) dans Réglages.",
@@ -413,6 +444,7 @@ async function main() {
       );
       return;
     }
+    if (UEFN) fail("Projet UEFN : rien à publier sur Roblox. Utilise `get CODE` pour récupérer le fichier.");
     printAsset(
       await call("/publish", {
         method: "POST",

@@ -30,6 +30,7 @@ import type {
   StudioHeartbeat,
   SwarmState,
   ToolchainStatus,
+  UefnProject,
   View,
 } from "./types";
 
@@ -236,7 +237,7 @@ export default function App() {
       <aside className="sidebar">
         <div className="brand">
           <strong>Lumen</strong>
-          <span>Jeux Roblox, à partir d’une phrase</span>
+          <span>Jeux Roblox et Fortnite, à partir d’une phrase</span>
         </div>
         <nav>
           {NAV.filter((item) => current || item.id === "projects").map((item) => (
@@ -602,13 +603,22 @@ function Projects({
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [uefn, setUefn] = useState<UefnProject[] | null>(null);
+
+  useEffect(() => {
+    void invoke<UefnProject[]>("list_uefn_projects")
+      .then(setUefn)
+      .catch(() => setUefn([]));
+  }, [projects]);
+
+  const unlinked = (uefn ?? []).filter((item) => !item.linked);
 
   return (
     <div className="hero">
       <h1>Tes mondes.</h1>
       <p className="lede">
-        Un projet Lumen, c’est un jeu Roblox en TypeScript, prêt pour Claude Code, Codex et Cursor.
-        Pas de VM, pas de terminal à configurer : les agents tournent dans l’app.
+        Un projet Lumen, c’est un jeu Roblox en TypeScript ou une île Fortnite en Verse, prêt pour Claude Code,
+        Codex et Cursor. Pas de VM, pas de terminal à configurer : les agents tournent dans l’app.
       </p>
       <div className="toolbar">
         <input
@@ -649,6 +659,9 @@ function Projects({
               className={`card ${current?.path === project.path ? "active" : ""}`}
               onClick={() => onOpen(project)}
             >
+              <span className={`engine-tag ${project.engine === "uefn" ? "uefn" : ""}`}>
+                {project.engine === "uefn" ? "Fortnite · UEFN" : "Roblox"}
+              </span>
               <h2 style={{ fontSize: 22 }}>{project.name}</h2>
               <small className="card-path" title={project.path}>
                 {displayPath(project.path)}
@@ -657,6 +670,51 @@ function Projects({
           ))}
         </div>
       )}
+      <section className="uefn-section">
+        <h2>Fortnite (UEFN)</h2>
+        <p className="lede">
+          Crée l’île dans UEFN, puis ajoute-la ici : les agents écrivent le Verse dans son dossier{" "}
+          <code>Content/</code> et piochent dans la même banque d’assets.
+        </p>
+        {uefn === null ? null : uefn.length === 0 ? (
+          <div className="empty">
+            Aucun projet dans Documents/Fortnite Projects. Crée une île dans UEFN, puis reviens ici.
+          </div>
+        ) : unlinked.length === 0 ? (
+          <div className="empty">Tous tes projets UEFN sont déjà dans Lumen.</div>
+        ) : (
+          <div className="grid">
+            {unlinked.map((item) => (
+              <div key={item.path} className="card uefn-card">
+                <span className="engine-tag uefn">Fortnite · UEFN</span>
+                <h2 style={{ fontSize: 22 }}>{item.name}</h2>
+                <small className="card-path" title={item.path}>
+                  {displayPath(item.path)}
+                </small>
+                <button
+                  className="btn copper"
+                  type="button"
+                  disabled={busy}
+                  onClick={async () => {
+                    setBusy(true);
+                    setErr("");
+                    try {
+                      const project = await invoke<Project>("link_uefn_project", { path: item.path });
+                      await onCreated(project);
+                    } catch (error) {
+                      setErr(String(error));
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  Ajouter à Lumen
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
     </div>
   );
 }
@@ -857,7 +915,7 @@ function Studio({
   }, []);
 
   useEffect(() => {
-    if (!project) {
+    if (!project || project.engine === "uefn") {
       setBooting(false);
       return;
     }
@@ -1149,6 +1207,7 @@ function Studio({
   const showPlaceChoice =
     studio?.connected &&
     (!studio.bound || Boolean(placeWarn));
+  const uefn = project.engine === "uefn";
 
   return (
     <div className="studio">
@@ -1219,6 +1278,20 @@ function Studio({
       <div className="studio-head">
         <h1>{project.name}</h1>
         <div className="syncbar">
+        {uefn ? (
+          <>
+            <span className="pill ok">Fortnite · Verse</span>
+            <button
+              className="btn copper"
+              onClick={() =>
+                void invoke("open_in_uefn", { path: project.path }).catch((err) => setSyncErr(String(err)))
+              }
+            >
+              Ouvrir dans UEFN
+            </button>
+          </>
+        ) : (
+        <>
         <span className={`pill ${toolchain?.node && toolchain.npm ? "ok" : "no"}`}>
           Node {toolchain?.node && toolchain.npm ? "ok" : "manquant"}
         </span>
@@ -1272,6 +1345,8 @@ function Studio({
             Stop sync
           </button>
         ) : null}
+        </>
+        )}
         <button
           className="btn secondary"
           onClick={() => void invoke("open_project_dir", { path: project.path })}
@@ -1381,9 +1456,17 @@ function Studio({
         })}
       </div>
       </div>
-      <ProjectShareBar path={project.path} />
+      {uefn ? null : <ProjectShareBar path={project.path} />}
       {syncErr ? <p className="sync-error">{syncErr}</p> : null}
-      {rojo?.serving ? (
+      {uefn ? (
+        <div className="place-banner compact">
+          <span>
+            Les agents écrivent le Verse dans <strong>Content/</strong>. Dans UEFN : <strong>Verse → Build Verse Code</strong>,
+            puis <strong>Push Verse Changes</strong> pendant une session.
+          </span>
+        </div>
+      ) : null}
+      {!uefn && rojo?.serving ? (
         <div className="place-banner compact">
           {studio?.connected ? (
             studio.bound ||

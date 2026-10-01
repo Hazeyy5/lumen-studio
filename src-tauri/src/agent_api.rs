@@ -467,6 +467,24 @@ fn handle(app: AppHandle, mut request: tiny_http::Request) {
                     ));
                     return;
                 }
+                if crate::uefn::is_uefn_project(&project) {
+                    if let Some(obj) = value.as_object_mut() {
+                        obj.insert("uefn".into(), serde_json::json!(true));
+                        obj.insert("publishSkipped".into(), serde_json::json!(true));
+                        obj.remove("robloxAssetId");
+                        match crate::uefn::copy_asset_for_uefn(&item, &project) {
+                            Ok((local_path, relative_path)) => {
+                                obj.insert("localPath".into(), serde_json::json!(local_path));
+                                obj.insert("relativePath".into(), serde_json::json!(relative_path));
+                            }
+                            Err(err) => {
+                                obj.insert("copyError".into(), serde_json::json!(err));
+                            }
+                        }
+                    }
+                    let _ = request.respond(json_response(200, value.to_string()));
+                    return;
+                }
                 let published = if item
                     .roblox_asset_id
                     .as_ref()

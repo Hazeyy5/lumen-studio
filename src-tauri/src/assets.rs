@@ -76,10 +76,13 @@ pub fn assert_lumen_project(project_path: &str) -> Result<PathBuf, String> {
     if !path.join(".lumen.json").exists() {
         return Err("Ce dossier n’est pas un projet Lumen".into());
     }
-    let root = crate::projects::projects_root()?;
     let canon = path.canonicalize().map_err(|e| e.to_string())?;
-    let root_canon = root.canonicalize().map_err(|e| e.to_string())?;
-    if !canon.starts_with(&root_canon) {
+    let inside = crate::projects::project_roots()?.into_iter().any(|root| {
+        root.canonicalize()
+            .map(|root_canon| canon.starts_with(&root_canon))
+            .unwrap_or(false)
+    });
+    if !inside {
         return Err("Projet hors du dossier Lumen".into());
     }
     Ok(canon)

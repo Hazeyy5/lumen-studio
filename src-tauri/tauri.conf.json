@@ -25,6 +25,7 @@
         "enable": true,
         "scope": [
           "$DOCUMENT/Lumen/**",
+          "$DOCUMENT/Fortnite Projects/**",
           "$DOCUMENT/AssetsDownloader/vibestarter_assets/**",
           "$PICTURE/textures/**",
           "$HOME/OneDrive/Images/textures/**"

@@ -18,6 +18,15 @@ pub struct Project {
     /// Ancien champ (un seul projet). Migré vers `referencePaths`.
     #[serde(default)]
     pub reference_path: Option<String>,
+    /// "uefn" pour un projet Fortnite. Vide = Roblox.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub engine: String,
+}
+
+impl Project {
+    pub fn is_uefn(&self) -> bool {
+        self.engine == "uefn"
+    }
 }
 
 pub(crate) fn projects_root() -> Result<PathBuf, String> {
@@ -29,6 +38,19 @@ pub(crate) fn projects_root() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// Dossier où UEFN range ses projets. N'est jamais créé par Lumen.
+pub(crate) fn fortnite_projects_root() -> Option<PathBuf> {
+    let dir = dirs::document_dir()?.join("Fortnite Projects");
+    dir.is_dir().then_some(dir)
+}
+
+/// Dossiers où un projet Lumen peut vivre : Lumen (Roblox) et Fortnite Projects (UEFN).
+pub(crate) fn project_roots() -> Result<Vec<PathBuf>, String> {
+    let mut roots = vec![projects_root()?];
+    roots.extend(fortnite_projects_root());
+    Ok(roots)
+}
+
 fn read_json_text(path: &Path) -> Result<String, String> {
     let bytes = fs::read(path).map_err(|e| e.to_string())?;
     let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(&bytes);
@@ -36,7 +58,7 @@ fn read_json_text(path: &Path) -> Result<String, String> {
     Ok(raw.trim().to_string())
 }
 
-fn parse_json_file<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
+pub(crate) fn parse_json_file<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, String> {
     let raw = read_json_text(path)?;
     if raw.is_empty() {
         return Err(format!("Fichier JSON vide : {}", path.display()));
@@ -44,23 +66,26 @@ fn parse_json_file<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T, Strin
     serde_json::from_str(&raw).map_err(|e| format!("{} : {e}", path.display()))
 }
 
-fn meta_path(dir: &Path) -> PathBuf {
+pub(crate) fn meta_path(dir: &Path) -> PathBuf {
     dir.join(".lumen.json")
 }
 
 #[tauri::command(async)]
 pub fn list_projects() -> Result<Vec<Project>, String> {
-    let root = projects_root()?;
     let mut out = Vec::new();
-    for entry in fs::read_dir(root).map_err(|e| e.to_string())? {
-        let entry = entry.map_err(|e| e.to_string())?;
-        let path = entry.path();
-        if !path.is_dir() {
+    for root in project_roots()? {
+        let Ok(entries) = fs::read_dir(&root) else {
             continue;
-        }
-        if let Ok(mut project) = parse_json_file::<Project>(&meta_path(&path)) {
-            project.path = path.to_string_lossy().into();
-            out.push(project);
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            if let Ok(mut project) = parse_json_file::<Project>(&meta_path(&path)) {
+                project.path = path.to_string_lossy().into();
+                out.push(project);
+            }
         }
     }
     out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
@@ -89,6 +114,7 @@ pub fn create_project(name: String) -> Result<Project, String> {
         bound_place_id: None,
         reference_paths: Vec::new(),
         reference_path: None,
+        engine: String::new(),
     };
 
     fs::write(
@@ -457,7 +483,7 @@ fn merge_legacy_refs(project: &mut Project) {
     }
 }
 
-fn save_project(project: &Project) -> Result<(), String> {
+pub(crate) fn save_project(project: &Project) -> Result<(), String> {
     fs::write(
         meta_path(Path::new(&project.path)),
         serde_json::to_string_pretty(project).map_err(|e| e.to_string())?,
@@ -478,12 +504,13 @@ fn paths_equal(a: &Path, b: &Path) -> bool {
 }
 
 fn under_projects_root(path: &Path) -> Result<bool, String> {
-    let root = projects_root()?;
-    let root = root.canonicalize().unwrap_or(root);
     let canon = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     let a = canon.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
-    let b = root.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
-    Ok(a.starts_with(&b))
+    Ok(project_roots()?.into_iter().any(|root| {
+        let root = root.canonicalize().unwrap_or(root);
+        let b = root.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
+        a.starts_with(&b)
+    }))
 }
 
 pub fn references_of(project_path: &str) -> Result<Vec<Project>, String> {
@@ -575,7 +602,7 @@ pub fn bind_project_place(path: &str, place_name: &str, place_id: i64) -> Result
     Ok(project)
 }
 
-fn chrono_like_now() -> String {
+pub(crate) fn chrono_like_now() -> String {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs().to_string())
@@ -654,7 +681,7 @@ node tools/lumen-asset.mjs blender assets/blender/crate.py Crate
 6. Textures (`TEX-xxxx`) : `search texture brick --for "sol de la rampe"`. `get` puis colle `rbxassetid://…` (ou `rbxasset://…`) sur ImageLabel / Texture / Decal / MeshPart.TextureID. Si le JSON a `scaleType` (textures Studio importées) : `ImageLabel.ScaleType` + `TileSize = UDim2.new(...)`. Les IDs Studio importés dans la banque sont déjà publiés.
 "#;
 
-fn ref_section_for(dir: &Path) -> String {
+pub(crate) fn ref_section_for(dir: &Path) -> String {
     let refs = references_of(&dir.to_string_lossy()).unwrap_or_default();
     if refs.is_empty() {
         return r#"
@@ -686,6 +713,9 @@ node tools/lumen-ref.mjs cat "Nom du projet" src/client/ui.ts
 }
 
 pub fn write_agent_bridge(dir: &Path) -> Result<(), String> {
+    if parse_json_file::<Project>(&meta_path(dir)).is_ok_and(|p| p.is_uefn()) {
+        return crate::uefn::write_uefn_bridge(dir);
+    }
     install_ui_kit(dir)?;
     let has_cars = install_car_pack(dir)?;
     fs::create_dir_all(dir.join("tools")).map_err(|e| e.to_string())?;
@@ -787,11 +817,16 @@ pub fn write_agent_bridge(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn write_claude_ref_settings(dir: &Path) -> Result<(), String> {
-    let extra: Vec<String> = references_of(&dir.to_string_lossy())?
+pub(crate) fn write_claude_ref_settings(dir: &Path) -> Result<(), String> {
+    write_claude_settings(dir, Vec::new())
+}
+
+pub(crate) fn write_claude_settings(dir: &Path, more: Vec<String>) -> Result<(), String> {
+    let mut extra: Vec<String> = references_of(&dir.to_string_lossy())?
         .into_iter()
         .map(|other| other.path)
         .collect();
+    extra.extend(more);
     fs::create_dir_all(dir.join(".claude")).map_err(|e| e.to_string())?;
     let json = serde_json::json!({
         "permissions": {
@@ -805,7 +840,7 @@ fn write_claude_ref_settings(dir: &Path) -> Result<(), String> {
     .map_err(|e| e.to_string())
 }
 
-fn upsert_ref_section(current: &str, section: &str) -> String {
+pub(crate) fn upsert_ref_section(current: &str, section: &str) -> String {
     let start = ["## Projets référence", "## Projet référence"]
         .iter()
         .filter_map(|head| current.find(head))

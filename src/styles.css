@@ -484,6 +484,20 @@ input:focus, textarea:focus, select:focus { border-color: var(--copper); }
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+.engine-tag {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.engine-tag.uefn { border-color: var(--copper); color: var(--copper); }
+.uefn-section { margin-top: 40px; }
+.uefn-section h2 { font-size: 26px; margin: 0 0 6px; }
+.uefn-card { display: flex; flex-direction: column; gap: 6px; }
+.uefn-card .btn { align-self: flex-start; margin-top: 8px; }
 .bank-card { cursor: pointer; }
 .bank-card:hover { outline: 2px solid var(--copper); }
 .bank-card-head {

@@ -18,6 +18,7 @@ mod studio;
 mod swarm;
 mod sync;
 mod textures;
+mod uefn;
 
 use agents::SessionMap;
 use compiler::CompilerState;
@@ -67,6 +68,9 @@ pub fn run() {
             collab::join_project,
             projects::open_project_dir,
             projects::set_reference_projects,
+            uefn::list_uefn_projects,
+            uefn::link_uefn_project,
+            uefn::open_in_uefn,
             agents::detect_agents,
             agents::start_agent,
             agents::write_agent,

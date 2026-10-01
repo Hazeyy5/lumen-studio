@@ -435,6 +435,7 @@ pub fn join_project(repo: String) -> Result<Project, String> {
             bound_place_id: None,
             reference_paths: Vec::new(),
             reference_path: None,
+            engine: String::new(),
         };
         fs::write(
             &meta,
