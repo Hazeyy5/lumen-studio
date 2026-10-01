@@ -25,6 +25,8 @@ dist-ssr
 
 # Secrets & local signing
 cloudflare/lumen-assets/.upload-key
+cloudflare/lumen-assets/.dev.vars
+cloudflare/lumen-assets/.dev.vars.*
 cloudflare/lumen-assets/upload-progress.json
 .env
 .env.*
