@@ -1461,8 +1461,8 @@ function Studio({
       {uefn ? (
         <div className="place-banner compact">
           <span>
-            Les agents écrivent le Verse dans <strong>Content/</strong>. Dans UEFN : <strong>Verse → Build Verse Code</strong>,
-            puis <strong>Push Verse Changes</strong> pendant une session.
+            Les agents écrivent le Verse dans <strong>Content/</strong> et le compilent eux-mêmes dans UEFN.
+            Garde UEFN ouvert sur <strong>{project.name}</strong>.
           </span>
         </div>
       ) : null}

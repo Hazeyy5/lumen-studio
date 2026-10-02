@@ -37,7 +37,7 @@ Ici, rien n'est publié sur Roblox. Ignore tout `rbxassetid`.
 2. Le fichier n'est pas encore dans UEFN. Dis à l'utilisateur de le glisser dans le Content Browser de UEFN, dans un dossier que tu nommes (ex. `Content/Lumen/Icons`).
    - `.png` : devient une texture.
    - `.glb` : s'importe comme Static Mesh. Si UEFN refuse, écris un script Blender qui exporte en `.fbx`.
-3. Après l'import, demande **Verse → Build Verse Code**. L'asset apparaît alors dans le digest `*-Assets.digest.verse` (chemin dans `AGENTS.md`) : un dossier de `Content/` devient un module. Exemple : `Lumen.Icons.T_coin_VS_0124 : texture`. Recopie le nom exact depuis le digest.
+3. Après l'import, lance `node tools/lumen-verse.mjs build` (UEFN ouvert). L'asset apparaît alors dans le digest `*-Assets.digest.verse` (chemin dans `AGENTS.md`) : un dossier de `Content/` devient un module. Exemple : `Lumen.Icons.T_coin_VS_0124 : texture`. Recopie le nom exact depuis le digest.
 4. En Verse, une texture s'affiche avec `texture_block{DefaultImage := Lumen.Icons.T_coin_VS_0124}`. Un mesh se place dans la map, ou s'anime avec des devices (Prop Mover, etc.). Dis à l'utilisateur où le poser.
 
 ## Inspiration (captures d'UI)

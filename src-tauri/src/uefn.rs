@@ -184,11 +184,24 @@ Jeu Fortnite (UEFN) relié à Lumen.
 - Le code est en **Verse**, dans `Content/` (fichiers `*.verse`). Range les nouveaux fichiers dans `Content/`, ou un sous-dossier de `Content/`.
 - Ne touche jamais aux `.uasset`, `.umap`, `__ExternalActors__`, `__ExternalObjects__`, ni au `.uefnproject` / `.uplugin`. C'est UEFN qui les gère.
 - Il n'y a ni Roblox, ni Rojo, ni TypeScript ici. Pas de `rbxassetid`.
+"#;
 
+const UEFN_CONSIGNE: &str = r#"
 ## Consigne pour l'agent
 Tu construis une île Fortnite jouable avec Verse. La logique vit dans des classes `creative_device` : l'utilisateur pose le device Verse dans la map, puis relie les champs `@editable` aux devices de la scène (dans le panneau Détails de UEFN). Dis-lui toujours quels devices poser et quoi relier.
 
-Tu ne peux pas compiler toi-même. Après tes modifications, demande à l'utilisateur, dans UEFN : **Verse → Build Verse Code** (Ctrl+Shift+B), puis **Push Verse Changes** si une session est lancée. S'il colle des erreurs, corrige-les.
+**Compile toi-même** après chaque modification, avec l'UEFN ouvert sur ce projet :
+
+```
+node tools/lumen-verse.mjs build
+node tools/lumen-verse.mjs push
+node tools/lumen-verse.mjs status
+```
+
+- `build` lance la compilation Verse dans UEFN et affiche les erreurs (`fichier(ligne,colonne) : message`). Corrige, puis relance `build` jusqu'à **0 erreur**, avant de rendre la main. Ne dis jamais que c'est fini sans un build à 0 erreur.
+- Si UEFN n'est pas joignable, ou s'il a un autre projet ouvert, demande à l'utilisateur d'ouvrir ce projet dans UEFN. Ne prétends pas que le code compile.
+- `push` envoie le Verse compilé dans la session de test en cours (Push Verse Changes). Sans session lancée, dis à l'utilisateur de la lancer depuis UEFN.
+- Les erreurs déjà présentes dans des fichiers que tu n'as pas touchés : signale-les, et ne les corrige que si l'utilisateur est d'accord.
 
 Livre une première version qui compile, puis itère. Ne demande pas de confirmer les étapes évidentes.
 "#;
@@ -221,7 +234,7 @@ node tools/lumen-asset.mjs blender assets/blender/crate.py Crate
 1. `search … --for "à quoi ça sert"` : Lumen montre un menu d'environ 10 assets, l'utilisateur en choisit **un**. Ensuite **un seul** `get` sur le code choisi.
 2. `get CODE` : l'utilisateur valide dans Lumen, puis Lumen copie le fichier dans `assets/images/`, `assets/meshes/` ou `assets/textures/` (chemin affiché par la commande). Rien n'est publié sur Roblox.
 3. Le fichier n'est **pas encore dans UEFN**. Demande à l'utilisateur de le glisser dans le Content Browser de UEFN, dans un dossier précis que tu choisis (ex. `Content/Lumen/Icons`). Les `.png` deviennent des textures. Les `.glb` s'importent comme Static Mesh ; si UEFN refuse le fichier, convertis-le en `.fbx` avec un script Blender.
-4. Après import et Build Verse Code, l'asset est utilisable en Verse par son module : `Lumen.Icons.T_coin_VS_0124` (vérifie le nom exact dans `*-Assets.digest.verse`). Une texture va dans un `texture_block{DefaultImage := …}`. Un mesh se pose dans la map ou via un device (Prop Mover, Prop-o-Matic…), pas en Verse brut.
+4. Après import et `node tools/lumen-verse.mjs build`, l'asset est utilisable en Verse par son module : `Lumen.Icons.T_coin_VS_0124` (vérifie le nom exact dans `*-Assets.digest.verse`). Une texture va dans un `texture_block{DefaultImage := …}`. Un mesh se pose dans la map ou via un device (Prop Mover, Prop-o-Matic…), pas en Verse brut.
 5. `image` / `mesh` / `blender` seulement si la recherche est vide ou si l'utilisateur a cliqué Aucune. Icônes et props 2D : **PNG fond transparent**.
 6. Inspiration UI (`INS-xxxx`) : `get` copie l'image dans `assets/inspiration/`. Lis-la et reproduis l'esprit (layout, couleurs) en UI Verse. Ne l'importe pas dans UEFN.
 "#;
@@ -277,6 +290,7 @@ pub fn write_uefn_bridge(dir: &Path) -> Result<(), String> {
         ("lumen-asset.mjs", include_str!("../resources/lumen-asset.mjs")),
         ("lumen-blender-run.py", include_str!("../resources/lumen-blender-run.py")),
         ("lumen-ref.mjs", include_str!("../resources/lumen-ref.mjs")),
+        ("lumen-verse.mjs", include_str!("../resources/lumen-verse.mjs")),
     ] {
         fs::write(dir.join("tools").join(name), body).map_err(|e| e.to_string())?;
     }
@@ -296,7 +310,8 @@ pub fn write_uefn_bridge(dir: &Path) -> Result<(), String> {
     } else {
         current.clone()
     };
-    let next = upsert_section(&base, "## API Verse", &api);
+    let next = upsert_section(&base, "## Consigne pour l'agent", UEFN_CONSIGNE);
+    let next = upsert_section(&next, "## API Verse", &api);
     let next = upsert_section(&next, "## Assets", UEFN_ASSET_SECTION);
     let next = upsert_ref_section(&next, &ref_section_for(dir));
     if next != current {
