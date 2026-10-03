@@ -215,6 +215,18 @@ N'invente pas de fonction. Vérifie dans les digests générés par UEFN (lectur
 Les assets déjà importés dans UEFN sont dans `*-Assets.digest.verse` : un dossier de `Content/` devient un module (`Icons.UI : texture` pour `Content/Icons/UI`). Après un import, ce fichier n'est mis à jour qu'au prochain Build Verse Code.
 "#;
 
+const UEFN_EDITOR_SECTION: &str = r#"
+## Éditeur UEFN (MCP)
+Tu as des outils MCP `uefn` qui pilotent l'éditeur UEFN ouvert : poser, déplacer, régler et supprimer des acteurs ; importer, lister et ranger des assets ; sauvegarder le niveau ; déplacer la caméra ; exécuter du Python dans l'éditeur (`execute_python`).
+
+- **Fais-le toi-même** au lieu de le demander : importer un fichier de la banque (`import_file`), poser un mesh ou un device (`spawn_actor`), régler position / rotation / échelle (`set_actor_transform`), modifier une propriété (`set_actor_properties` ou `execute_python`). Ne demande à l'utilisateur que ce que les outils ne savent pas faire (relier un `@editable` dans le panneau Détails si tu n'y arrives pas, tester en jeu).
+- Commence par `ping`, puis `get_project_info` : la racine du contenu est `/<Projet>/`, pas `/Game/`.
+- Avant de modifier la map, regarde ce qui existe (`get_all_actors`). Ne supprime que ce que tu as posé, ou ce que l'utilisateur a demandé.
+- Après une série de modifications réussies : `save_current_level`. Puis montre le résultat : `select_actors` + `focus_selected`.
+- Si un outil répond que l'écouteur ne tourne pas : demande à l'utilisateur, dans UEFN, **Outils → Exécuter un script Python** → `{listener}` (le plugin **Python Editor Script Plugin** doit être coché dans les Paramètres du projet). Si UEFN a un autre projet ouvert, demande d'ouvrir le bon. Dans les deux cas, attends : ne prétends pas avoir modifié la map.
+- `execute_python` donne un contrôle total de l'éditeur : code court, ciblé, jamais de boucle de suppression large.
+"#;
+
 const UEFN_ASSET_SECTION: &str = r#"
 ## Assets (banque Lumen + VibeStarter)
 Même banque que pour Roblox. Les clés API sont dans Lumen. **Cherche d'abord**, propose, puis récupère.
@@ -291,6 +303,12 @@ pub fn write_uefn_bridge(dir: &Path) -> Result<(), String> {
         ("lumen-blender-run.py", include_str!("../resources/lumen-blender-run.py")),
         ("lumen-ref.mjs", include_str!("../resources/lumen-ref.mjs")),
         ("lumen-verse.mjs", include_str!("../resources/lumen-verse.mjs")),
+        ("lumen-uefn-mcp.mjs", include_str!("../resources/lumen-uefn-mcp.mjs")),
+        ("uefn_listener.py", include_str!("../resources/uefn/uefn_listener.py")),
+        (
+            "LICENSE-uefn-mcp-server.txt",
+            include_str!("../resources/uefn/LICENSE-uefn-mcp-server.txt"),
+        ),
     ] {
         fs::write(dir.join("tools").join(name), body).map_err(|e| e.to_string())?;
     }
@@ -312,6 +330,8 @@ pub fn write_uefn_bridge(dir: &Path) -> Result<(), String> {
     };
     let next = upsert_section(&base, "## Consigne pour l'agent", UEFN_CONSIGNE);
     let next = upsert_section(&next, "## API Verse", &api);
+    let editor = UEFN_EDITOR_SECTION.replace("{listener}", &listener_path(dir));
+    let next = upsert_section(&next, "## Éditeur UEFN", &editor);
     let next = upsert_section(&next, "## Assets", UEFN_ASSET_SECTION);
     let next = upsert_ref_section(&next, &ref_section_for(dir));
     if next != current {
@@ -319,6 +339,7 @@ pub fn write_uefn_bridge(dir: &Path) -> Result<(), String> {
     }
 
     write_claude_settings(dir, extra_dirs)?;
+    write_mcp_configs(dir)?;
 
     let claude_path = dir.join("CLAUDE.md");
     if !claude_path.exists() {
@@ -327,6 +348,88 @@ pub fn write_uefn_bridge(dir: &Path) -> Result<(), String> {
             "# Lumen (UEFN)\n\nLis `AGENTS.md`. Code Verse dans `Content/`. Banque : `node tools/lumen-asset.mjs search …`.\n",
         )
         .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+fn slash_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
+fn listener_path(dir: &Path) -> String {
+    slash_path(&dir.join("tools").join("uefn_listener.py"))
+}
+
+fn mcp_server_entry(dir: &Path) -> serde_json::Value {
+    serde_json::json!({
+        "command": "node",
+        "args": [slash_path(&dir.join("tools").join("lumen-uefn-mcp.mjs"))],
+        "env": { "LUMEN_PROJECT": dir.to_string_lossy() },
+    })
+}
+
+fn read_json_object(path: &Path) -> serde_json::Value {
+    fs::read_to_string(path)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw.trim_start_matches('\u{feff}')).ok())
+        .filter(|v| v.is_object())
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+fn write_json(path: &Path, value: &serde_json::Value) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    fs::write(path, serde_json::to_string_pretty(value).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())
+}
+
+/// Ajoute (ou met à jour) le serveur `uefn` sans toucher aux autres serveurs du fichier.
+fn merge_mcp_json(path: &Path, entry: &serde_json::Value) -> Result<(), String> {
+    let mut root = read_json_object(path);
+    let servers = root
+        .as_object_mut()
+        .expect("objet JSON")
+        .entry("mcpServers")
+        .or_insert_with(|| serde_json::json!({}));
+    if !servers.is_object() {
+        *servers = serde_json::json!({});
+    }
+    servers
+        .as_object_mut()
+        .expect("objet JSON")
+        .insert("uefn".into(), entry.clone());
+    write_json(path, &root)
+}
+
+fn write_mcp_configs(dir: &Path) -> Result<(), String> {
+    let entry = mcp_server_entry(dir);
+    merge_mcp_json(&dir.join(".mcp.json"), &entry)?;
+    merge_mcp_json(&dir.join(".cursor").join("mcp.json"), &entry)?;
+    merge_mcp_json(&dir.join(".gemini").join("settings.json"), &entry)?;
+
+    // Claude Code demande d'approuver les serveurs de .mcp.json : on approuve `uefn` d'avance.
+    let settings_path = dir.join(".claude").join("settings.local.json");
+    let mut settings = read_json_object(&settings_path);
+    settings
+        .as_object_mut()
+        .expect("objet JSON")
+        .insert("enabledMcpjsonServers".into(), serde_json::json!(["uefn"]));
+    write_json(&settings_path, &settings)?;
+
+    // Codex : config de projet, écrite seulement si elle vient de Lumen ou n'existe pas.
+    let codex_path = dir.join(".codex").join("config.toml");
+    let current = fs::read_to_string(&codex_path).unwrap_or_default();
+    if current.trim().is_empty() || current.starts_with("# lumen-uefn") {
+        let quote = |text: &str| serde_json::to_string(text).unwrap_or_default();
+        let script = slash_path(&dir.join("tools").join("lumen-uefn-mcp.mjs"));
+        let toml = format!(
+            "# lumen-uefn : écrit par Lumen\n[mcp_servers.uefn]\ncommand = \"node\"\nargs = [{}]\n\n[mcp_servers.uefn.env]\nLUMEN_PROJECT = {}\n",
+            quote(&script),
+            quote(&dir.to_string_lossy()),
+        );
+        fs::create_dir_all(dir.join(".codex")).map_err(|e| e.to_string())?;
+        fs::write(&codex_path, toml).map_err(|e| e.to_string())?;
     }
     Ok(())
 }

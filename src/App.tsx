@@ -1462,7 +1462,8 @@ function Studio({
         <div className="place-banner compact">
           <span>
             Les agents écrivent le Verse dans <strong>Content/</strong> et le compilent eux-mêmes dans UEFN.
-            Garde UEFN ouvert sur <strong>{project.name}</strong>.
+            Garde UEFN ouvert sur <strong>{project.name}</strong>. Pour qu’ils agissent aussi dans la map : dans UEFN,{" "}
+            <strong>Outils → Exécuter un script Python</strong> → <code>tools/uefn_listener.py</code>.
           </span>
         </div>
       ) : null}
