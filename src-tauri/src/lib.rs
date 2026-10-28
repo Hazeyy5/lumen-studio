@@ -18,6 +18,7 @@ mod studio;
 mod swarm;
 mod sync;
 mod textures;
+mod trends;
 mod uefn;
 
 use agents::SessionMap;
@@ -71,6 +72,9 @@ pub fn run() {
             uefn::list_uefn_projects,
             uefn::link_uefn_project,
             uefn::open_in_uefn,
+            trends::trends_advice,
+            trends::roblox_trending,
+            trends::fortnite_catalog_match,
             agents::detect_agents,
             agents::start_agent,
             agents::write_agent,

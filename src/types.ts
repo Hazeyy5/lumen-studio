@@ -1,4 +1,4 @@
-export type View = "projects" | "studio" | "workshop" | "bank" | "settings";
+export type View = "projects" | "trends" | "studio" | "workshop" | "bank" | "settings";
 
 export type RobloxUser = {
   id: string;

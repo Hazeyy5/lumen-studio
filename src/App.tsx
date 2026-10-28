@@ -13,6 +13,7 @@ import { AgentIconCapture, ModelToIconPage } from "./MeshToIcon";
 import { ptyBus } from "./ptyBus";
 import { imageBrief, imageFilesFromTransfer, savePastedFiles, type PastedImage } from "./pasteImage";
 import { applyTheme, readTheme, toggleTheme, type Theme } from "./theme";
+import { Trends } from "./Trends";
 import type {
   AgentKind,
   AgentStatus,
@@ -54,6 +55,7 @@ function studioPlaceLabel(
 
 const NAV: { id: View; label: string }[] = [
   { id: "projects", label: "Projets" },
+  { id: "trends", label: "Tendances" },
   { id: "studio", label: "Studio" },
   { id: "workshop", label: "Atelier" },
   { id: "bank", label: "Banque" },
@@ -240,7 +242,7 @@ export default function App() {
           <span>Jeux Roblox et Fortnite, à partir d’une phrase</span>
         </div>
         <nav>
-          {NAV.filter((item) => current || item.id === "projects").map((item) => (
+          {NAV.filter((item) => current || item.id === "projects" || item.id === "trends").map((item) => (
             <button
               key={item.id}
               className={view === item.id ? "active" : ""}
@@ -301,6 +303,7 @@ export default function App() {
             onProjectChange={setCurrent}
           />
         )}
+        {view === "trends" && <Trends />}
         {view === "workshop" && <Workshop project={current} keys={keys} />}
         {bankSeen ? (
           <div hidden={view !== "bank"}>
