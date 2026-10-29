@@ -1774,3 +1774,10 @@ button.trends-row:hover { background: var(--paper-2); }
   .trends-rbx > .pill { grid-column: 1; }
   .trends-rbx > :last-child { grid-column: 1 / -1; }
 }
+
+.mcp-status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.mcp-status i { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.mcp-status.on i { background: var(--sage); box-shadow: 0 0 0 3px color-mix(in srgb, var(--sage) 25%, transparent); }
+.mcp-status.warn i { background: #d4a574; }
+.mcp-status.off i { background: var(--copper-deep); }
+.place-banner .mcp-status { font-size: 12px; font-weight: 600; color: var(--ink); }

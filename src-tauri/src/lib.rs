@@ -72,6 +72,7 @@ pub fn run() {
             uefn::list_uefn_projects,
             uefn::link_uefn_project,
             uefn::open_in_uefn,
+            uefn::uefn_editor_status,
             trends::trends_advice,
             trends::roblox_trending,
             trends::fortnite_catalog_match,

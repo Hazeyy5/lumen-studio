@@ -125,6 +125,48 @@ pub fn open_in_uefn(path: String) -> Result<(), String> {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UefnEditorStatus {
+    pub running: bool,
+    pub port: Option<u16>,
+    /// Nom du projet ouvert dans UEFN (racine du contenu, ex. « MonIle »).
+    pub project: Option<String>,
+}
+
+/// L'écouteur Python (tools/uefn_listener.py) tourne-t-il dans UEFN ? Mêmes ports que lumen-uefn-mcp.mjs.
+#[tauri::command(async)]
+pub fn uefn_editor_status() -> UefnEditorStatus {
+    let off = UefnEditorStatus { running: false, port: None, project: None };
+    let Ok(client) = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_millis(600))
+        .build()
+    else {
+        return off;
+    };
+    let Some(port) = (8765u16..=8770).find(|p| {
+        client
+            .get(format!("http://127.0.0.1:{p}"))
+            .send()
+            .ok()
+            .and_then(|r| r.json::<serde_json::Value>().ok())
+            .is_some_and(|j| j.get("status").and_then(|s| s.as_str()) == Some("ok"))
+    }) else {
+        return off;
+    };
+    // Passe par le thread principal de l'éditeur : peut prendre un peu plus de temps.
+    let project = client
+        .post(format!("http://127.0.0.1:{port}"))
+        .timeout(std::time::Duration::from_secs(3))
+        .json(&serde_json::json!({ "command": "get_project_info", "params": {} }))
+        .send()
+        .ok()
+        .and_then(|r| r.json::<serde_json::Value>().ok())
+        .and_then(|j| j.pointer("/result/project_name").and_then(|v| v.as_str()).map(str::to_string))
+        .filter(|name| !name.is_empty());
+    UefnEditorStatus { running: true, port: Some(port), project }
+}
+
 fn safe_file_part(text: &str) -> String {
     let out: String = text
         .chars()

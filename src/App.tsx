@@ -14,6 +14,7 @@ import { ptyBus } from "./ptyBus";
 import { imageBrief, imageFilesFromTransfer, savePastedFiles, type PastedImage } from "./pasteImage";
 import { applyTheme, readTheme, toggleTheme, type Theme } from "./theme";
 import { Trends } from "./Trends";
+import { uefnStatusLabel, useUefnEditor } from "./uefnStatus";
 import type {
   AgentKind,
   AgentStatus,
@@ -91,6 +92,8 @@ export default function App() {
   const [appUpdate, setAppUpdate] = useState<Update | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
   const [updateMsg, setUpdateMsg] = useState("");
+  const uefnEditor = useUefnEditor(current?.engine === "uefn");
+  const uefnLabel = current?.engine === "uefn" ? uefnStatusLabel(uefnEditor, current.path) : null;
 
   useEffect(() => {
     applyTheme(theme);
@@ -256,6 +259,15 @@ export default function App() {
           {current ? `Projet : ${current.name}` : "Aucun projet ouvert"}
           <br />
           Agents : {agents.filter((a) => a.found).length}/3 détectés
+          {uefnLabel ? (
+            <>
+              <br />
+              <span className={`mcp-status ${uefnLabel.tone}`}>
+                <i />
+                {uefnLabel.text}
+              </span>
+            </>
+          ) : null}
         </div>
       </aside>
       <div className="workspace">
@@ -1211,6 +1223,8 @@ function Studio({
     studio?.connected &&
     (!studio.bound || Boolean(placeWarn));
   const uefn = project.engine === "uefn";
+  const uefnEditor = useUefnEditor(uefn);
+  const uefnLabel = uefnStatusLabel(uefnEditor, project.path);
 
   return (
     <div className="studio">
@@ -1465,8 +1479,21 @@ function Studio({
         <div className="place-banner compact">
           <span>
             Les agents écrivent le Verse dans <strong>Content/</strong> et le compilent eux-mêmes dans UEFN.
-            Garde UEFN ouvert sur <strong>{project.name}</strong>. Pour qu’ils agissent aussi dans la map : dans UEFN,{" "}
-            <strong>Outils → Exécuter un script Python</strong> → <code>tools/uefn_listener.py</code>.
+            Garde UEFN ouvert sur <strong>{project.name}</strong>.{" "}
+            {uefnLabel.tone === "on" ? (
+              <>Les agents peuvent aussi agir dans la map.</>
+            ) : uefnLabel.tone === "warn" ? (
+              <>UEFN a un autre projet ouvert : ouvre {project.name} pour que les agents agissent dans la map.</>
+            ) : (
+              <>
+                Pour qu’ils agissent aussi dans la map : dans UEFN, <strong>Outils → Exécuter un script Python</strong> →{" "}
+                <code>tools/uefn_listener.py</code> (à refaire à chaque ouverture d’UEFN).
+              </>
+            )}
+          </span>
+          <span className={`mcp-status ${uefnLabel.tone}`}>
+            <i />
+            {uefnLabel.tone === "on" ? "MCP connecté" : uefnLabel.tone === "warn" ? "Autre projet" : uefnLabel.tone === "wait" ? "Vérification…" : "MCP non lancé"}
           </span>
         </div>
       ) : null}
