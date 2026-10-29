@@ -58,6 +58,39 @@ fn http() -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| e.to_string())
 }
 
+// Appels à l'API Fortnite pour l'onglet Tendances. Côté webview, un 429 renvoyé sans en-tête CORS
+// devient un simple « Failed to fetch » impossible à réessayer : on passe donc par ici.
+#[tauri::command(async)]
+pub fn fortnite_api(path: String) -> Result<Option<serde_json::Value>, String> {
+    static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+    let client = match CLIENT.get() {
+        Some(c) => c,
+        None => {
+            let c = http()?;
+            CLIENT.get_or_init(|| c)
+        }
+    };
+    let url = format!("{FORTNITE_API}{path}");
+    let mut last = String::new();
+    for attempt in 0..6u64 {
+        if attempt > 0 {
+            std::thread::sleep(Duration::from_millis(1500 * attempt));
+        }
+        match client.get(&url).send() {
+            Ok(res) if res.status().is_success() => {
+                return res.json().map(Some).map_err(|e| format!("API Fortnite : {e}"));
+            }
+            Ok(res) if res.status().as_u16() == 404 => return Ok(None),
+            Ok(res) if res.status().as_u16() == 429 || res.status().is_server_error() => {
+                last = format!("API Fortnite {} sur {path}", res.status().as_u16());
+            }
+            Ok(res) => return Err(format!("API Fortnite {} sur {path}", res.status().as_u16())),
+            Err(e) => last = format!("API Fortnite : {e}"),
+        }
+    }
+    Err(last)
+}
+
 fn now_secs() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }

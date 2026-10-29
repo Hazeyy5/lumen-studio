@@ -1,7 +1,8 @@
 // Tendances Fortnite depuis l'API publique d'Epic (api.fortnite.com, sans clé).
 // Classements par genre (maintenant et il y a 7 jours) + métriques du top de chaque genre.
 
-const API = "https://api.fortnite.com/ecosystem/v1";
+import { invoke } from "@tauri-apps/api/core";
+
 const CACHE_KEY = "lumen.trends.v1";
 const CACHE_MS = 60 * 60 * 1000;
 const TOP = 10;
@@ -55,15 +56,9 @@ type Point = { value: number | null; timestamp: string };
 type Metrics = Record<string, Point[]> & { retention?: { d1: number | null; timestamp: string }[] };
 type Meta = { code: string; creatorCode?: string; title?: string; tags?: string[] };
 
-async function api<T>(path: string, tries = 5): Promise<T | null> {
-  for (let i = 0; i < tries; i += 1) {
-    const res = await fetch(API + path);
-    if (res.ok) return (await res.json()) as T;
-    if (res.status === 404) return null;
-    if (res.status !== 429 && res.status < 500) throw new Error(`API Fortnite ${res.status} sur ${path}`);
-    await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
-  }
-  return null;
+// Passe par Rust : réessais sur 429/5xx, et pas de CORS pour transformer un 429 en « Failed to fetch ».
+async function api<T>(path: string): Promise<T | null> {
+  return invoke<T | null>("fortnite_api", { path });
 }
 
 async function pool<T, R>(items: T[], size: number, work: (item: T) => Promise<R>, tick: () => void) {

@@ -75,6 +75,7 @@ pub fn run() {
             trends::trends_advice,
             trends::roblox_trending,
             trends::fortnite_catalog_match,
+            trends::fortnite_api,
             agents::detect_agents,
             agents::start_agent,
             agents::write_agent,
