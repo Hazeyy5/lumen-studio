@@ -2,7 +2,12 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
-export type UefnEditorStatus = { running: boolean; port: number | null; project: string | null };
+export type UefnEditorStatus = {
+  running: boolean;
+  port: number | null;
+  project: string | null;
+  projectPath: string | null;
+};
 
 const POLL_MS = 4000;
 let last: UefnEditorStatus | null = null;
@@ -13,7 +18,7 @@ async function poll() {
   try {
     last = await invoke<UefnEditorStatus>("uefn_editor_status");
   } catch {
-    last = { running: false, port: null, project: null };
+    last = { running: false, port: null, project: null, projectPath: null };
   }
   listeners.forEach((fn) => fn(last!));
   if (listeners.size) window.setTimeout(poll, POLL_MS);
@@ -37,10 +42,11 @@ export function useUefnEditor(active: boolean): UefnEditorStatus | null {
   return active ? status : null;
 }
 
-/** Le dossier du projet UEFN porte le nom de la racine du contenu (/MonIle/). */
+const normPath = (p: string) => p.replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
+
+/** Sans dossier identifié (projet hors Documents/Fortnite Projects), on ne signale rien. */
 export function isSameUefnProject(status: UefnEditorStatus, projectPath: string) {
-  const folder = projectPath.replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
-  return !status.project || status.project.toLowerCase() === folder.toLowerCase();
+  return !status.projectPath || normPath(status.projectPath) === normPath(projectPath);
 }
 
 export function uefnStatusLabel(status: UefnEditorStatus | null, projectPath: string) {

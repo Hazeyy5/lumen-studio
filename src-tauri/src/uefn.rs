@@ -130,14 +130,25 @@ pub fn open_in_uefn(path: String) -> Result<(), String> {
 pub struct UefnEditorStatus {
     pub running: bool,
     pub port: Option<u16>,
-    /// Nom du projet ouvert dans UEFN (racine du contenu, ex. « MonIle »).
+    /// Titre du projet ouvert dans UEFN, et son dossier s'il est dans Documents/Fortnite Projects.
     pub project: Option<String>,
+    pub project_path: Option<String>,
+}
+
+/// UEFN monte le contenu sous /<module>/, où <module> est le nom du .uplugin du dossier projet (un GUID).
+fn project_for_module(module: &str) -> Option<PathBuf> {
+    let root = fortnite_projects_root()?;
+    fs::read_dir(root)
+        .ok()?
+        .flatten()
+        .map(|e| e.path())
+        .find(|dir| dir.join(format!("{module}.uplugin")).is_file())
 }
 
 /// L'écouteur Python (tools/uefn_listener.py) tourne-t-il dans UEFN ? Mêmes ports que lumen-uefn-mcp.mjs.
 #[tauri::command(async)]
 pub fn uefn_editor_status() -> UefnEditorStatus {
-    let off = UefnEditorStatus { running: false, port: None, project: None };
+    let off = UefnEditorStatus { running: false, port: None, project: None, project_path: None };
     let Ok(client) = reqwest::blocking::Client::builder()
         .timeout(std::time::Duration::from_millis(600))
         .build()
@@ -155,7 +166,7 @@ pub fn uefn_editor_status() -> UefnEditorStatus {
         return off;
     };
     // Passe par le thread principal de l'éditeur : peut prendre un peu plus de temps.
-    let project = client
+    let module = client
         .post(format!("http://127.0.0.1:{port}"))
         .timeout(std::time::Duration::from_secs(3))
         .json(&serde_json::json!({ "command": "get_project_info", "params": {} }))
@@ -164,7 +175,13 @@ pub fn uefn_editor_status() -> UefnEditorStatus {
         .and_then(|r| r.json::<serde_json::Value>().ok())
         .and_then(|j| j.pointer("/result/project_name").and_then(|v| v.as_str()).map(str::to_string))
         .filter(|name| !name.is_empty());
-    UefnEditorStatus { running: true, port: Some(port), project }
+    let dir = module.as_deref().and_then(project_for_module);
+    UefnEditorStatus {
+        running: true,
+        port: Some(port),
+        project: dir.as_deref().map(uefn_title).or(module),
+        project_path: dir.map(|d| d.to_string_lossy().into_owned()),
+    }
 }
 
 fn safe_file_part(text: &str) -> String {
