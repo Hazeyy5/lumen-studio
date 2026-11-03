@@ -19,6 +19,7 @@ mod swarm;
 mod sync;
 mod textures;
 mod trends;
+mod unreal;
 mod uefn;
 
 use agents::SessionMap;
@@ -73,6 +74,12 @@ pub fn run() {
             uefn::link_uefn_project,
             uefn::open_in_uefn,
             uefn::uefn_editor_status,
+            unreal::list_unreal_projects,
+            unreal::link_unreal_project,
+            unreal::open_in_unreal,
+            unreal::unreal_editor_status,
+            unreal::unreal_toolchain,
+            unreal::install_netfx_sdk,
             trends::trends_advice,
             trends::roblox_trending,
             trends::fortnite_catalog_match,

@@ -1,4 +1,5 @@
-// État de l'écouteur MCP dans UEFN (tools/uefn_listener.py), vérifié toutes les 4 s tant qu'un composant l'écoute.
+// État du MCP des éditeurs (UEFN : tools/uefn_listener.py ; Unreal : plugin ModelContextProtocol),
+// vérifié toutes les 4 s tant qu'un composant l'écoute.
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
@@ -9,38 +10,52 @@ export type UefnEditorStatus = {
   projectPath: string | null;
 };
 
+export type UnrealEditorStatus = { running: boolean; server: string | null };
+
 const POLL_MS = 4000;
-let last: UefnEditorStatus | null = null;
-const listeners = new Set<(s: UefnEditorStatus) => void>();
-let looping = false;
 
-async function poll() {
-  try {
-    last = await invoke<UefnEditorStatus>("uefn_editor_status");
-  } catch {
-    last = { running: false, port: null, project: null, projectPath: null };
-  }
-  listeners.forEach((fn) => fn(last!));
-  if (listeners.size) window.setTimeout(poll, POLL_MS);
-  else looping = false;
-}
+function poller<T>(command: string, offline: T) {
+  let last: T | null = null;
+  let looping = false;
+  const listeners = new Set<(s: T) => void>();
 
-/** `null` tant que la première vérification n'a pas répondu. */
-export function useUefnEditor(active: boolean): UefnEditorStatus | null {
-  const [status, setStatus] = useState<UefnEditorStatus | null>(last);
-  useEffect(() => {
-    if (!active) return;
-    listeners.add(setStatus);
-    if (!looping) {
-      looping = true;
-      void poll();
+  async function poll() {
+    try {
+      last = await invoke<T>(command);
+    } catch {
+      last = offline;
     }
-    return () => {
-      listeners.delete(setStatus);
-    };
-  }, [active]);
-  return active ? status : null;
+    listeners.forEach((fn) => fn(last!));
+    if (listeners.size) window.setTimeout(poll, POLL_MS);
+    else looping = false;
+  }
+
+  /** `null` tant que la première vérification n'a pas répondu. */
+  return function useStatus(active: boolean): T | null {
+    const [status, setStatus] = useState<T | null>(last);
+    useEffect(() => {
+      if (!active) return;
+      listeners.add(setStatus);
+      if (!looping) {
+        looping = true;
+        void poll();
+      }
+      return () => {
+        listeners.delete(setStatus);
+      };
+    }, [active]);
+    return active ? status : null;
+  };
 }
+
+export const useUefnEditor = poller<UefnEditorStatus>("uefn_editor_status", {
+  running: false,
+  port: null,
+  project: null,
+  projectPath: null,
+});
+
+export const useUnrealEditor = poller<UnrealEditorStatus>("unreal_editor_status", { running: false, server: null });
 
 const normPath = (p: string) => p.replace(/[\\/]+/g, "/").replace(/\/$/, "").toLowerCase();
 
@@ -56,4 +71,10 @@ export function uefnStatusLabel(status: UefnEditorStatus | null, projectPath: st
     return { tone: "warn", text: `MCP UEFN : UEFN a « ${status.project} » ouvert` };
   }
   return { tone: "on", text: "MCP UEFN : connecté" };
+}
+
+export function unrealStatusLabel(status: UnrealEditorStatus | null) {
+  if (!status) return { tone: "wait", text: "MCP Unreal : vérification…" };
+  if (!status.running) return { tone: "off", text: "MCP Unreal : éditeur fermé" };
+  return { tone: "on", text: "MCP Unreal : connecté" };
 }

@@ -18,7 +18,7 @@ pub struct Project {
     /// Ancien champ (un seul projet). Migré vers `referencePaths`.
     #[serde(default)]
     pub reference_path: Option<String>,
-    /// "uefn" pour un projet Fortnite. Vide = Roblox.
+    /// "uefn" pour un projet Fortnite, "unreal" pour Unreal Engine. Vide = Roblox.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub engine: String,
 }
@@ -26,6 +26,10 @@ pub struct Project {
 impl Project {
     pub fn is_uefn(&self) -> bool {
         self.engine == "uefn"
+    }
+
+    pub fn is_unreal(&self) -> bool {
+        self.engine == "unreal"
     }
 }
 
@@ -44,10 +48,17 @@ pub(crate) fn fortnite_projects_root() -> Option<PathBuf> {
     dir.is_dir().then_some(dir)
 }
 
-/// Dossiers où un projet Lumen peut vivre : Lumen (Roblox) et Fortnite Projects (UEFN).
+/// Dossier par défaut des projets Unreal Engine. N'est jamais créé par Lumen.
+pub(crate) fn unreal_projects_root() -> Option<PathBuf> {
+    let dir = dirs::document_dir()?.join("Unreal Projects");
+    dir.is_dir().then_some(dir)
+}
+
+/// Dossiers où un projet Lumen peut vivre : Lumen (Roblox), Fortnite Projects (UEFN), Unreal Projects.
 pub(crate) fn project_roots() -> Result<Vec<PathBuf>, String> {
     let mut roots = vec![projects_root()?];
     roots.extend(fortnite_projects_root());
+    roots.extend(unreal_projects_root());
     Ok(roots)
 }
 
@@ -713,8 +724,13 @@ node tools/lumen-ref.mjs cat "Nom du projet" src/client/ui.ts
 }
 
 pub fn write_agent_bridge(dir: &Path) -> Result<(), String> {
-    if parse_json_file::<Project>(&meta_path(dir)).is_ok_and(|p| p.is_uefn()) {
-        return crate::uefn::write_uefn_bridge(dir);
+    if let Ok(project) = parse_json_file::<Project>(&meta_path(dir)) {
+        if project.is_uefn() {
+            return crate::uefn::write_uefn_bridge(dir);
+        }
+        if project.is_unreal() {
+            return crate::unreal::write_unreal_bridge(dir);
+        }
     }
     install_ui_kit(dir)?;
     let has_cars = install_car_pack(dir)?;

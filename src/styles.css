@@ -1781,3 +1781,6 @@ button.trends-row:hover { background: var(--paper-2); }
 .mcp-status.warn i { background: #d4a574; }
 .mcp-status.off i { background: var(--copper-deep); }
 .place-banner .mcp-status { font-size: 12px; font-weight: 600; color: var(--ink); }
+
+.engine-tag.unreal { border-color: var(--ink); color: var(--ink); }
+.place-banner.warn { border-color: #d4a574; }

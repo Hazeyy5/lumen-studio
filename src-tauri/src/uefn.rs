@@ -194,6 +194,7 @@ fn safe_file_part(text: &str) -> String {
 
 /// Pour un projet UEFN, `get` copie le fichier dans `assets/` au lieu de publier sur Roblox.
 /// Le nom commence par `T_` / `SM_` pour suivre la convention Unreal ; c'est aussi le nom Verse après import.
+/// Sert aussi aux projets Unreal (même dossier assets/).
 pub fn copy_asset_for_uefn(item: &BankItem, project_path: &str) -> Result<(String, String), String> {
     let project = crate::assets::assert_lumen_project(project_path)?;
     let local = crate::catalog::materialize(item)?;
@@ -335,7 +336,7 @@ fn section_bounds(text: &str, heading: &str) -> Option<(usize, usize)> {
     Some((start, end))
 }
 
-fn upsert_section(current: &str, heading: &str, section: &str) -> String {
+pub(crate) fn upsert_section(current: &str, heading: &str, section: &str) -> String {
     let section = section.trim();
     match section_bounds(current, heading) {
         Some((start, end)) => {
@@ -411,7 +412,7 @@ pub fn write_uefn_bridge(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn slash_path(path: &Path) -> String {
+pub(crate) fn slash_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
@@ -427,7 +428,7 @@ fn mcp_server_entry(dir: &Path) -> serde_json::Value {
     })
 }
 
-fn read_json_object(path: &Path) -> serde_json::Value {
+pub(crate) fn read_json_object(path: &Path) -> serde_json::Value {
     fs::read_to_string(path)
         .ok()
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw.trim_start_matches('\u{feff}')).ok())
@@ -435,7 +436,7 @@ fn read_json_object(path: &Path) -> serde_json::Value {
         .unwrap_or_else(|| serde_json::json!({}))
 }
 
-fn write_json(path: &Path, value: &serde_json::Value) -> Result<(), String> {
+pub(crate) fn write_json(path: &Path, value: &serde_json::Value) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }

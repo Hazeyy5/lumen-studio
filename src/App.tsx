@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -14,7 +14,7 @@ import { ptyBus } from "./ptyBus";
 import { imageBrief, imageFilesFromTransfer, savePastedFiles, type PastedImage } from "./pasteImage";
 import { applyTheme, readTheme, toggleTheme, type Theme } from "./theme";
 import { Trends } from "./Trends";
-import { uefnStatusLabel, useUefnEditor } from "./uefnStatus";
+import { uefnStatusLabel, unrealStatusLabel, useUefnEditor, useUnrealEditor } from "./uefnStatus";
 import type {
   AgentKind,
   AgentStatus,
@@ -33,6 +33,7 @@ import type {
   SwarmState,
   ToolchainStatus,
   UefnProject,
+  UnrealToolchain,
   View,
 } from "./types";
 
@@ -93,7 +94,13 @@ export default function App() {
   const [updateBusy, setUpdateBusy] = useState(false);
   const [updateMsg, setUpdateMsg] = useState("");
   const uefnEditor = useUefnEditor(current?.engine === "uefn");
-  const uefnLabel = current?.engine === "uefn" ? uefnStatusLabel(uefnEditor, current.path) : null;
+  const unrealEditor = useUnrealEditor(current?.engine === "unreal");
+  const uefnLabel =
+    current?.engine === "uefn"
+      ? uefnStatusLabel(uefnEditor, current.path)
+      : current?.engine === "unreal"
+        ? unrealStatusLabel(unrealEditor)
+        : null;
 
   useEffect(() => {
     applyTheme(theme);
@@ -618,21 +625,11 @@ function Projects({
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-  const [uefn, setUefn] = useState<UefnProject[] | null>(null);
-
-  useEffect(() => {
-    void invoke<UefnProject[]>("list_uefn_projects")
-      .then(setUefn)
-      .catch(() => setUefn([]));
-  }, [projects]);
-
-  const unlinked = (uefn ?? []).filter((item) => !item.linked);
-
   return (
     <div className="hero">
       <h1>Tes mondes.</h1>
       <p className="lede">
-        Un projet Lumen, c’est un jeu Roblox en TypeScript ou une île Fortnite en Verse, prêt pour Claude Code,
+        Un projet Lumen, c’est un jeu Roblox en TypeScript, une île Fortnite en Verse ou un jeu Unreal en C++, prêt pour Claude Code,
         Codex et Cursor. Pas de VM, pas de terminal à configurer : les agents tournent dans l’app.
       </p>
       <div className="toolbar">
@@ -674,9 +671,7 @@ function Projects({
               className={`card ${current?.path === project.path ? "active" : ""}`}
               onClick={() => onOpen(project)}
             >
-              <span className={`engine-tag ${project.engine === "uefn" ? "uefn" : ""}`}>
-                {project.engine === "uefn" ? "Fortnite · UEFN" : "Roblox"}
-              </span>
+              <span className={`engine-tag ${project.engine ?? ""}`}>{ENGINE_LABELS[project.engine || ""]}</span>
               <h2 style={{ fontSize: 22 }}>{project.name}</h2>
               <small className="card-path" title={project.path}>
                 {displayPath(project.path)}
@@ -685,52 +680,124 @@ function Projects({
           ))}
         </div>
       )}
-      <section className="uefn-section">
-        <h2>Fortnite (UEFN)</h2>
-        <p className="lede">
-          Crée l’île dans UEFN, puis ajoute-la ici : les agents écrivent le Verse dans son dossier{" "}
-          <code>Content/</code> et piochent dans la même banque d’assets.
-        </p>
-        {uefn === null ? null : uefn.length === 0 ? (
-          <div className="empty">
-            Aucun projet dans Documents/Fortnite Projects. Crée une île dans UEFN, puis reviens ici.
-          </div>
-        ) : unlinked.length === 0 ? (
-          <div className="empty">Tous tes projets UEFN sont déjà dans Lumen.</div>
-        ) : (
-          <div className="grid">
-            {unlinked.map((item) => (
-              <div key={item.path} className="card uefn-card">
-                <span className="engine-tag uefn">Fortnite · UEFN</span>
-                <h2 style={{ fontSize: 22 }}>{item.name}</h2>
-                <small className="card-path" title={item.path}>
-                  {displayPath(item.path)}
-                </small>
-                <button
-                  className="btn copper"
-                  type="button"
-                  disabled={busy}
-                  onClick={async () => {
-                    setBusy(true);
-                    setErr("");
-                    try {
-                      const project = await invoke<Project>("link_uefn_project", { path: item.path });
-                      await onCreated(project);
-                    } catch (error) {
-                      setErr(String(error));
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  Ajouter à Lumen
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
+      <EngineSection
+        engine="uefn"
+        title="Fortnite (UEFN)"
+        lede={
+          <>
+            Crée l’île dans UEFN, puis ajoute-la ici : les agents écrivent le Verse dans son dossier <code>Content/</code>{" "}
+            et piochent dans la même banque d’assets.
+          </>
+        }
+        empty="Aucun projet dans Documents/Fortnite Projects. Crée une île dans UEFN, puis reviens ici."
+        listCommand="list_uefn_projects"
+        linkCommand="link_uefn_project"
+        projects={projects}
+        busy={busy}
+        setBusy={setBusy}
+        setErr={setErr}
+        onCreated={onCreated}
+      />
+      <EngineSection
+        engine="unreal"
+        title="Unreal Engine"
+        lede={
+          <>
+            Crée le projet dans Unreal 5.8, puis ajoute-le ici : les agents écrivent et compilent le C++ dans{" "}
+            <code>Source/</code>, et pilotent l’éditeur par son MCP officiel (activé par Lumen).
+          </>
+        }
+        empty="Aucun projet dans Documents/Unreal Projects. Crée un projet dans Unreal, puis reviens ici."
+        listCommand="list_unreal_projects"
+        linkCommand="link_unreal_project"
+        projects={projects}
+        busy={busy}
+        setBusy={setBusy}
+        setErr={setErr}
+        onCreated={onCreated}
+      />
     </div>
+  );
+}
+
+const ENGINE_LABELS: Record<string, string> = { "": "Roblox", uefn: "Fortnite · UEFN", unreal: "Unreal Engine" };
+
+function EngineSection({
+  engine,
+  title,
+  lede,
+  empty,
+  listCommand,
+  linkCommand,
+  projects,
+  busy,
+  setBusy,
+  setErr,
+  onCreated,
+}: {
+  engine: "uefn" | "unreal";
+  title: string;
+  lede: ReactNode;
+  empty: string;
+  listCommand: string;
+  linkCommand: string;
+  projects: Project[];
+  busy: boolean;
+  setBusy: (busy: boolean) => void;
+  setErr: (err: string) => void;
+  onCreated: (project: Project) => Promise<void>;
+}) {
+  const [found, setFound] = useState<UefnProject[] | null>(null);
+
+  useEffect(() => {
+    void invoke<UefnProject[]>(listCommand)
+      .then(setFound)
+      .catch(() => setFound([]));
+  }, [projects, listCommand]);
+
+  const unlinked = (found ?? []).filter((item) => !item.linked);
+
+  return (
+    <section className="uefn-section">
+      <h2>{title}</h2>
+      <p className="lede">{lede}</p>
+      {found === null ? null : found.length === 0 ? (
+        <div className="empty">{empty}</div>
+      ) : unlinked.length === 0 ? (
+        <div className="empty">Tous tes projets {ENGINE_LABELS[engine]} sont déjà dans Lumen.</div>
+      ) : (
+        <div className="grid">
+          {unlinked.map((item) => (
+            <div key={item.path} className="card uefn-card">
+              <span className={`engine-tag ${engine}`}>{ENGINE_LABELS[engine]}</span>
+              <h2 style={{ fontSize: 22 }}>{item.name}</h2>
+              <small className="card-path" title={item.path}>
+                {displayPath(item.path)}
+              </small>
+              <button
+                className="btn copper"
+                type="button"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  setErr("");
+                  try {
+                    const project = await invoke<Project>(linkCommand, { path: item.path });
+                    await onCreated(project);
+                  } catch (error) {
+                    setErr(String(error));
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                Ajouter à Lumen
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -930,7 +997,7 @@ function Studio({
   }, []);
 
   useEffect(() => {
-    if (!project || project.engine === "uefn") {
+    if (!project || project.engine) {
       setBooting(false);
       return;
     }
@@ -1223,8 +1290,27 @@ function Studio({
     studio?.connected &&
     (!studio.bound || Boolean(placeWarn));
   const uefn = project.engine === "uefn";
+  const unreal = project.engine === "unreal";
   const uefnEditor = useUefnEditor(uefn);
   const uefnLabel = uefnStatusLabel(uefnEditor, project.path);
+  const unrealEditor = useUnrealEditor(unreal);
+  const unrealLabel = unrealStatusLabel(unrealEditor);
+  const [unrealTools, setUnrealTools] = useState<UnrealToolchain | null>(null);
+  useEffect(() => {
+    if (!unreal) return;
+    let cancel = false;
+    const check = () =>
+      void invoke<UnrealToolchain>("unreal_toolchain", { path: project.path })
+        .then((t) => !cancel && setUnrealTools(t))
+        .catch(() => {});
+    check();
+    // Re-vérifie de temps en temps : l'installation du SDK se fait hors de Lumen.
+    const id = window.setInterval(check, 15000);
+    return () => {
+      cancel = true;
+      window.clearInterval(id);
+    };
+  }, [unreal, project.path]);
 
   return (
     <div className="studio">
@@ -1295,7 +1381,19 @@ function Studio({
       <div className="studio-head">
         <h1>{project.name}</h1>
         <div className="syncbar">
-        {uefn ? (
+        {unreal ? (
+          <>
+            <span className="pill ok">Unreal · C++</span>
+            <button
+              className="btn copper"
+              onClick={() =>
+                void invoke("open_in_unreal", { path: project.path }).catch((err) => setSyncErr(String(err)))
+              }
+            >
+              Ouvrir dans Unreal
+            </button>
+          </>
+        ) : uefn ? (
           <>
             <span className="pill ok">Fortnite · Verse</span>
             <button
@@ -1473,7 +1571,7 @@ function Studio({
         })}
       </div>
       </div>
-      {uefn ? null : <ProjectShareBar path={project.path} />}
+      {uefn || unreal ? null : <ProjectShareBar path={project.path} />}
       {syncErr ? <p className="sync-error">{syncErr}</p> : null}
       {uefn ? (
         <div className="place-banner compact">
@@ -1497,7 +1595,53 @@ function Studio({
           </span>
         </div>
       ) : null}
-      {!uefn && rojo?.serving ? (
+      {unreal ? (
+        <div className="place-banner compact">
+          <span>
+            Les agents écrivent le C++ dans <strong>Source/</strong> et le compilent eux-mêmes.{" "}
+            {unrealLabel.tone === "on" ? (
+              <>L’éditeur est ouvert : ils agissent aussi dans le niveau, et compilent par Live Coding.</>
+            ) : (
+              <>
+                Ouvre <strong>{project.name}</strong> dans Unreal pour qu’ils agissent dans le niveau : le MCP démarre tout
+                seul avec le projet (la première fois, Unreal peut demander de redémarrer pour activer les plugins).
+              </>
+            )}
+          </span>
+          <span className={`mcp-status ${unrealLabel.tone}`}>
+            <i />
+            {unrealLabel.tone === "on" ? "MCP connecté" : unrealLabel.tone === "wait" ? "Vérification…" : "Éditeur fermé"}
+          </span>
+        </div>
+      ) : null}
+      {unreal && unrealTools && (!unrealTools.engine || !unrealTools.vsCpp || !unrealTools.netfx) ? (
+        <div className="place-banner compact warn">
+          <span>
+            {!unrealTools.engine ? (
+              <>Unreal {unrealTools.association || "?"} introuvable : installe-le depuis l’Epic Games Launcher.</>
+            ) : !unrealTools.vsCpp ? (
+              <>
+                Pour compiler le C++, installe <strong>Visual Studio 2022</strong> avec « Développement Desktop en C++ ».
+              </>
+            ) : (
+              <>
+                Il manque le <strong>SDK .NET Framework 4.8</strong> de Visual Studio : sans lui, Unreal ne compile pas le
+                C++. Visual Studio Installer va s’ouvrir (Windows demande les droits administrateur).
+              </>
+            )}
+          </span>
+          {unrealTools.engine && unrealTools.vsCpp && !unrealTools.netfx ? (
+            <button
+              className="btn copper"
+              type="button"
+              onClick={() => void invoke("install_netfx_sdk").catch((err) => setSyncErr(String(err)))}
+            >
+              Installer le SDK
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      {!uefn && !unreal && rojo?.serving ? (
         <div className="place-banner compact">
           {studio?.connected ? (
             studio.bound ||

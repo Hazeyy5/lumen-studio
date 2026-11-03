@@ -23,16 +23,18 @@ import { readdirSync } from "node:fs";
 
 const BASE = process.env.LUMEN_ASSET_URL || "http://127.0.0.1:17422";
 
-// Projet Fortnite : pas de publication Roblox, le fichier reste dans assets/ pour l'import UEFN.
-const UEFN = (() => {
+// Projet Fortnite ou Unreal : pas de publication Roblox, le fichier reste dans assets/ pour l'import dans l'éditeur.
+const ENGINE = (() => {
   try {
-    return readdirSync(process.env.LUMEN_PROJECT || process.cwd()).some((f) =>
-      f.toLowerCase().endsWith(".uefnproject"),
-    );
+    const files = readdirSync(process.env.LUMEN_PROJECT || process.cwd()).map((f) => f.toLowerCase());
+    if (files.some((f) => f.endsWith(".uefnproject"))) return "uefn";
+    if (files.some((f) => f.endsWith(".uproject"))) return "unreal";
   } catch {
-    return false;
+    /* Roblox */
   }
+  return "";
 })();
+const UEFN = ENGINE !== "";
 
 function relativeFile(path) {
   const root = (process.env.LUMEN_PROJECT || process.cwd()).replace(/\\/g, "/").replace(/\/$/, "");
@@ -87,10 +89,17 @@ function printAsset(json) {
   if (UEFN && !json.inspiration) {
     const file = json.relativePath || relativeFile(json.localPath || json.path);
     if (file) {
-      console.log(`Fichier pour UEFN : ${file}`);
-      console.log(
-        "Demande à l'utilisateur de le glisser dans le Content Browser de UEFN (dossier à préciser), puis Build Verse Code. Le nom Verse est dans le digest *-Assets.digest.verse.",
-      );
+      if (ENGINE === "unreal") {
+        console.log(`Fichier pour Unreal : ${file}`);
+        console.log(
+          "Importe-le toi-même avec le MCP de l'éditeur (import d'asset vers /Game/Lumen/...), éditeur ouvert. Sinon, demande à l'utilisateur de le glisser dans le Content Browser.",
+        );
+      } else {
+        console.log(`Fichier pour UEFN : ${file}`);
+        console.log(
+          "Demande à l'utilisateur de le glisser dans le Content Browser de UEFN (dossier à préciser), puis Build Verse Code. Le nom Verse est dans le digest *-Assets.digest.verse.",
+        );
+      }
     }
     if (json.copyError) console.log(`Copie : ${json.copyError}`);
     console.log(JSON.stringify(json, null, 2));
@@ -444,7 +453,7 @@ async function main() {
       );
       return;
     }
-    if (UEFN) fail("Projet UEFN : rien à publier sur Roblox. Utilise `get CODE` pour récupérer le fichier.");
+    if (UEFN) fail("Projet UEFN/Unreal : rien à publier sur Roblox. Utilise `get CODE` pour récupérer le fichier.");
     printAsset(
       await call("/publish", {
         method: "POST",

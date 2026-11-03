@@ -467,7 +467,7 @@ fn handle(app: AppHandle, mut request: tiny_http::Request) {
                     ));
                     return;
                 }
-                if crate::uefn::is_uefn_project(&project) {
+                if crate::uefn::is_uefn_project(&project) || crate::unreal::is_unreal_project(&project) {
                     if let Some(obj) = value.as_object_mut() {
                         obj.insert("uefn".into(), serde_json::json!(true));
                         obj.insert("publishSkipped".into(), serde_json::json!(true));

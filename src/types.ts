@@ -25,7 +25,14 @@ export type Project = {
   boundPlaceId?: number | null;
   referencePaths?: string[];
   referencePath?: string | null;
-  engine?: "uefn" | "";
+  engine?: "uefn" | "unreal" | "";
+};
+
+export type UnrealToolchain = {
+  engine: string | null;
+  association: string;
+  vsCpp: boolean;
+  netfx: boolean;
 };
 
 export type UefnProject = {
