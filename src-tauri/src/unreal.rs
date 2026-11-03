@@ -247,7 +247,8 @@ pub fn unreal_toolchain(path: String) -> UnrealToolchain {
     }
 }
 
-/// Ouvre Visual Studio Installer pour ajouter le SDK .NET Framework 4.8 (Windows demande les droits admin).
+/// Ouvre Visual Studio Installer avec le SDK .NET Framework 4.8 déjà coché : l'utilisateur clique « Modifier ».
+/// Pas de --passive : l'installeur le refuse (code 5007) s'il n'est pas lancé en administrateur dès le départ.
 #[tauri::command]
 pub fn install_netfx_sdk() -> Result<(), String> {
     let path = vs_install_path(None).ok_or("Visual Studio 2022 introuvable : installe-le avec « Développement Desktop en C++ ».")?;
@@ -256,7 +257,7 @@ pub fn install_netfx_sdk() -> Result<(), String> {
         return Err("Visual Studio Installer introuvable".into());
     }
     std::process::Command::new(installer)
-        .args(["modify", "--installPath", &path, "--add", NETFX_COMPONENT, "--passive", "--norestart"])
+        .args(["modify", "--installPath", &path, "--add", NETFX_COMPONENT])
         .spawn()
         .map_err(|e| format!("Impossible de lancer Visual Studio Installer : {e}"))?;
     Ok(())

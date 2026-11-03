@@ -1626,7 +1626,7 @@ function Studio({
             ) : (
               <>
                 Il manque le <strong>SDK .NET Framework 4.8</strong> de Visual Studio : sans lui, Unreal ne compile pas le
-                C++. Visual Studio Installer va s’ouvrir (Windows demande les droits administrateur).
+                C++. Visual Studio Installer va s’ouvrir avec le SDK déjà coché : clique « Modifier » (Windows demande les droits administrateur).
               </>
             )}
           </span>
