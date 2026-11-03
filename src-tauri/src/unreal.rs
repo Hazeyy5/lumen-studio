@@ -147,12 +147,15 @@ pub fn unreal_editor_status() -> UnrealEditorStatus {
     else {
         return off;
     };
+    // Unreal renvoie du JSON indenté sur plusieurs lignes ; en SSE, chaque message tient sur une ligne « data: ».
     let text = res.text().unwrap_or_default();
-    let json = text
-        .lines()
-        .map(|l| l.trim().trim_start_matches("data:").trim())
-        .find(|l| l.starts_with('{'))
-        .and_then(|l| serde_json::from_str::<serde_json::Value>(l).ok());
+    let json = if text.trim_start().starts_with('{') {
+        serde_json::from_str::<serde_json::Value>(text.trim()).ok()
+    } else {
+        text.lines()
+            .filter_map(|l| l.trim().strip_prefix("data:"))
+            .find_map(|l| serde_json::from_str::<serde_json::Value>(l.trim()).ok())
+    };
     match json {
         Some(j) if j.get("result").is_some() => UnrealEditorStatus {
             running: true,
