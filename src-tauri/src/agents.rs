@@ -126,7 +126,10 @@ pub fn start_agent(
                     args.push(other.path);
                 }
             }
-            if resuming {
+            // Claude n'enregistre une conversation qu'au premier message : un terminal fermé avant
+            // n'a rien à reprendre, et `--resume` échouerait. On repart alors avec le même identifiant.
+            let resumable = assigned_resume.is_empty() || claude_transcript_exists(&assigned_resume);
+            if resuming && resumable {
                 args.push("--resume".into());
                 if !assigned_resume.is_empty() {
                     args.push(assigned_resume.clone());
@@ -552,6 +555,17 @@ fn visit_jsonl(dir: &Path, on_file: &mut impl FnMut(&Path)) {
             on_file(&path);
         }
     }
+}
+
+/// La conversation Claude Code `id` a-t-elle été enregistrée (~/.claude/projects/<projet>/<id>.jsonl) ?
+fn claude_transcript_exists(id: &str) -> bool {
+    let Some(root) = dirs::home_dir().map(|h| h.join(".claude").join("projects")) else {
+        return false;
+    };
+    let file = format!("{id}.jsonl");
+    std::fs::read_dir(root)
+        .map(|dirs| dirs.flatten().any(|d| d.path().join(&file).is_file()))
+        .unwrap_or(false)
 }
 
 fn codex_session_ids(project_path: &str) -> HashSet<String> {
