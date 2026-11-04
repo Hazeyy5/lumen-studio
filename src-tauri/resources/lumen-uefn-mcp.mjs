@@ -108,6 +108,56 @@ function pyString(text) {
   return JSON.stringify(String(text));
 }
 
+// Champs @editable d'un device Verse. Python ne les voit que sous leur nom interne
+// (« __verse_0xBF219067_Team1 ») : on les lit dans la copie texte du device (EDIT COPY),
+// puis on rend le presse-papiers et la sélection de l'utilisateur.
+const VERSE_FIELDS_PY = `
+import re
+def _lumen_actor(label):
+    acts = actor_sub.get_all_level_actors()
+    for a in acts:
+        if a.get_actor_label() == label:
+            return a
+    close = [a.get_actor_label() for a in acts if label.lower() in a.get_actor_label().lower()][:10]
+    raise ValueError(f"Aucun acteur nommé « {label} ». Proches : {close}")
+
+def _lumen_verse_fields(dev):
+    script = dev.get_editor_property("Script")
+    root = get_tk_root()
+    try:
+        previous = root.clipboard_get()
+    except Exception:
+        previous = None
+    selection = actor_sub.get_selected_level_actors()
+    actor_sub.set_selected_level_actors([dev])
+    try:
+        unreal.SystemLibrary.execute_console_command(unreal.EditorLevelLibrary.get_editor_world(), "EDIT COPY")
+        root.update()
+        text = root.clipboard_get()
+    finally:
+        actor_sub.set_selected_level_actors(selection)
+        if previous is not None:
+            root.clipboard_clear()
+            root.clipboard_append(previous)
+            root.update()
+    fields = {}
+    for mangled, name in re.findall(r"^\\s*(__verse_0x[0-9A-F]+_(\\w+))=", text, re.M):
+        if name in fields:
+            continue
+        try:
+            fields[name] = (mangled, script.get_editor_property(mangled))
+        except Exception:
+            pass  # sous-objet d'un champ (événement…), pas un champ du device
+    return script, fields
+
+def _lumen_describe(value):
+    try:
+        target = value.get_editor_property("SavedActor")
+        return {"type": value.get_class().get_name(), "device": target.get_actor_label() if target else None}
+    except Exception:
+        return {"value": str(value)}
+`;
+
 const TOOLS = [
   {
     name: "ping",
@@ -173,6 +223,59 @@ result = [str(p) for p in task.get_editor_property("imported_object_paths")]
         return "UEFN n'a rien importé (format refusé ?). Si c'est un .glb, convertis-le en .fbx avec Blender puis réessaie.";
       }
       return `Importé :\n${paths.join("\n")}\nPour le poser : spawn_actor avec asset_path = le chemin sans le suffixe « .Nom » (ex. /Projet/Lumen/SM_Autel).`;
+    },
+  },
+  {
+    name: "get_verse_fields",
+    description:
+      "Liste les champs @editable d'un device Verse posé dans le niveau (par son label), avec le device relié à chacun. Les champs vers un device ont un « type » ; device = null s'il n'est pas encore relié.",
+    schema: { device: { type: "string", description: "Label du device Verse dans le niveau (ex. « Boxfight-boxfight round device »)." } },
+    required: ["device"],
+    safe: true,
+    run: async ({ device }) => {
+      const code = `${VERSE_FIELDS_PY}
+script, fields = _lumen_verse_fields(_lumen_actor(${pyString(device)}))
+result = {name: _lumen_describe(value) for name, (mangled, value) in fields.items()}
+`;
+      const r = await send("execute_python", { code }, 60000);
+      if (r.stderr) throw new Error(r.stderr);
+      return `${json(r.result)}\nLes listes vides ([]device) n'apparaissent pas : elles restent à remplir à la main dans le panneau Détails.`;
+    },
+  },
+  {
+    name: "link_verse_field",
+    description:
+      "Relie un champ @editable d'un device Verse (ex. Team1) à un device du niveau (ex. BF_TeamSettings_Team1), comme dans le panneau Détails. Champs vers UN device seulement, pas les listes. Annulable par Ctrl+Z. Lance save_current_level après la série : UEFN n'enregistre le lien qu'à la sauvegarde.",
+    schema: {
+      device: { type: "string", description: "Label du device Verse à régler." },
+      field: { type: "string", description: "Nom du champ tel qu'écrit dans le Verse (ex. Team1)." },
+      target: { type: "string", description: "Label du device à relier (ex. BF_TeamSettings_Team1)." },
+    },
+    required: ["device", "field", "target"],
+    run: async ({ device, field, target }) => {
+      const code = `${VERSE_FIELDS_PY}
+dev = _lumen_actor(${pyString(device)})
+target = _lumen_actor(${pyString(target)})
+script, fields = _lumen_verse_fields(dev)
+if ${pyString(field)} not in fields:
+    raise ValueError(f"Champ introuvable. Champs du device : {sorted(fields)}. Les listes vides ne sont pas modifiables ici.")
+mangled, wrapper = fields[${pyString(field)}]
+try:
+    wrapper.get_editor_property("SavedActor")
+except Exception:
+    raise ValueError("Ce champ n'est pas une référence vers un device (nombre, texte, liste…). Règle-le dans le Verse ou le panneau Détails.")
+with unreal.ScopedEditorTransaction("Lumen : " + ${pyString(field)}):
+    dev.modify()
+    script.modify()
+    wrapper.modify()
+    wrapper.set_editor_property("SavedActor", target)
+linked = wrapper.get_editor_property("SavedActor")
+result = linked.get_actor_label() if linked else None
+`;
+      const r = await send("execute_python", { code }, 60000);
+      if (r.stderr) throw new Error(r.stderr);
+      if (r.result !== target) throw new Error(`Le lien n'a pas pris (champ = ${r.result}).`);
+      return `${device}.${field} → ${target}. Pense à save_current_level quand la série est finie.`;
     },
   },
   {
