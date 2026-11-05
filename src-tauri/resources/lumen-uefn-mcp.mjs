@@ -191,6 +191,38 @@ def _lumen_link_value(script, sample, target):
     if _lumen_verse_owner(sample) is not None:
         return target.get_editor_property("Script")
     raise ValueError("Ce champ n'est pas une référence vers un device (nombre, texte…). Règle-le dans le Verse ou le panneau Détails.")
+
+def _lumen_device_schema(dev):
+    # Outil interne d'Epic (DeviceToolset) : connaît tous les champs, même les listes vides.
+    import json
+    if not hasattr(unreal, "DeviceToolset"):
+        return {}
+    cdo = unreal.get_default_object(unreal.DeviceToolset)
+    return json.loads(cdo.call_method("ListDeviceProperties", (dev,)))
+
+def _lumen_empty_lists(dev, known):
+    lowered = {k.lower() for k in known}
+    return [k for k, s in _lumen_device_schema(dev).items() if s.get("type") == "array" and k.lower() not in lowered]
+
+def _lumen_fill_empty_list(dev, script, name, targets):
+    # Liste vide : son nom interne est inconnu, on passe par DeviceToolset avec des éléments neufs.
+    import json
+    schema = _lumen_device_schema(dev)
+    key = next((k for k in schema if k.lower() == name.lower()), None)
+    if key is None:
+        raise ValueError(f"Champ « {name} » introuvable. Champs du device : {sorted(schema)}.")
+    spec = schema[key]
+    item = spec.get("items") or {}
+    if spec.get("type") != "array" or "refPath" not in (item.get("properties") or {}):
+        raise ValueError(f"« {name} » n'est pas une liste de devices Fortnite ; remplis-la dans le panneau Détails.")
+    cls = unreal.load_object(None, item["title"])
+    refs = []
+    for t in targets:
+        w = unreal.new_object(cls, outer=script)
+        w.set_editor_property("SavedActor", t)
+        refs.append({"refPath": w.get_path_name()})
+    cdo = unreal.get_default_object(unreal.DeviceToolset)
+    cdo.call_method("SetDeviceProperty", (dev, key, json.dumps(refs)))
 `;
 
 const TOOLS = [
@@ -269,18 +301,24 @@ result = [str(p) for p in task.get_editor_property("imported_object_paths")]
     safe: true,
     run: async ({ device }) => {
       const code = `${VERSE_FIELDS_PY}
-script, fields = _lumen_verse_fields(_lumen_actor(${pyString(device)}))
+dev = _lumen_actor(${pyString(device)})
+script, fields = _lumen_verse_fields(dev)
 result = {name: _lumen_describe(value) for name, (mangled, value) in fields.items()}
+try:
+    for name in _lumen_empty_lists(dev, fields):
+        result[name] = {"list": []}  # nom renvoyé par Epic (initiale en minuscule)
+except Exception as e:
+    print("Listes vides non lisibles :", e)
 `;
       const r = await send("execute_python", { code }, 60000);
       if (r.stderr) throw new Error(r.stderr);
-      return `${json(r.result)}\nUne liste vide n'apparaît pas : l'utilisateur doit y ajouter un élément à la main (n'importe lequel), puis link_verse_field avec targets pourra la remplir.`;
+      return json(r.result);
     },
   },
   {
     name: "link_verse_field",
     description:
-      "Relie un champ @editable d'un device Verse à des devices du niveau, comme dans le panneau Détails : un champ simple (Team1 → BF_TeamSettings_Team1, Hud → un autre device Verse) ou une liste (Teams → [Team1, Team2], qui remplace toute la liste). Une liste encore vide est introuvable : demande à l'utilisateur d'y ajouter un élément à la main (n'importe lequel), puis remplis-la ici. Annulable par Ctrl+Z. Lance save_current_level après la série : UEFN n'enregistre qu'à la sauvegarde.",
+      "Relie un champ @editable d'un device Verse à des devices du niveau, comme dans le panneau Détails : un champ simple (Team1 → BF_TeamSettings_Team1, Hud → un autre device Verse) ou une liste, même vide (Teams → [Team1, Team2], qui remplace toute la liste). Annulable par Ctrl+Z. Lance save_current_level après la série : UEFN n'enregistre qu'à la sauvegarde.",
     schema: {
       device: { type: "string", description: "Label du device Verse à régler." },
       field: { type: "string", description: "Nom du champ tel qu'écrit dans le Verse (ex. Team1, Teams)." },
@@ -297,16 +335,22 @@ dev = _lumen_actor(${pyString(device)})
 targets = [_lumen_actor(t) for t in ${JSON.stringify(wanted)}]
 name = ${pyString(field)}
 script, fields = _lumen_verse_fields(dev)
-if name not in fields:
-    raise ValueError(f"Champ introuvable. Champs connus : {sorted(fields)}. Si « {name} » est une liste vide, l'utilisateur doit d'abord y ajouter un élément à la main dans le panneau Détails.")
-mangled, current = fields[name]
-is_list = _lumen_is_list(current)
-if is_list != ${isList ? "True" : "False"}:
-    raise ValueError(f"« {name} » est " + ("une liste : passe targets." if is_list else "un champ simple : passe target."))
+name = next((k for k in fields if k.lower() == name.lower()), name)
+want_list = ${isList ? "True" : "False"}
+empty_list = name not in fields and want_list
+if name not in fields and not want_list:
+    raise ValueError(f"Champ introuvable. Champs connus : {sorted(fields)}.")
+if not empty_list:
+    mangled, current = fields[name]
+    is_list = _lumen_is_list(current)
+    if is_list != want_list:
+        raise ValueError(f"« {name} » est " + ("une liste : passe targets." if is_list else "un champ simple : passe target."))
 with unreal.ScopedEditorTransaction("Lumen : " + name):
     dev.modify()
     script.modify()
-    if is_list:
+    if empty_list:
+        _lumen_fill_empty_list(dev, script, name, targets)  # nom interne inconnu tant qu'elle est vide
+    elif is_list:
         old = list(current)
         reuse = _lumen_wrapper_target(old[0])[0]
         values = []
@@ -324,7 +368,8 @@ with unreal.ScopedEditorTransaction("Lumen : " + name):
     else:
         script.set_editor_property(mangled, _lumen_link_value(script, current, targets[0]))
 script, fields = _lumen_verse_fields(dev)
-result = _lumen_describe(fields[name][1]) if name in fields else None
+name = next((k for k in fields if k.lower() == name.lower()), name)
+result =_lumen_describe(fields[name][1]) if name in fields else None
 `;
       const r = await send("execute_python", { code }, 60000);
       if (r.stderr) throw new Error(r.stderr);
