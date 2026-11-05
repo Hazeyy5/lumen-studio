@@ -141,7 +141,7 @@ def _lumen_verse_fields(dev):
             root.clipboard_append(previous)
             root.update()
     fields = {}
-    for mangled, name in re.findall(r"^\\s*(__verse_0x[0-9A-F]+_(\\w+))=", text, re.M):
+    for mangled, name in re.findall(r"^\\s*(__verse_0x[0-9A-F]+_(\\w+))(?:\\(\\d+\\))?=", text, re.M):
         if name in fields:
             continue
         try:
@@ -150,12 +150,47 @@ def _lumen_verse_fields(dev):
             pass  # sous-objet d'un champ (événement…), pas un champ du device
     return script, fields
 
-def _lumen_describe(value):
+def _lumen_is_list(value):
+    return isinstance(value, (unreal.Array, list))
+
+def _lumen_wrapper_target(value):
+    # Champ vers un device Fortnite : objet intermédiaire dont SavedActor est l'acteur.
     try:
-        target = value.get_editor_property("SavedActor")
-        return {"type": value.get_class().get_name(), "device": target.get_actor_label() if target else None}
+        return True, value.get_editor_property("SavedActor")
     except Exception:
-        return {"value": str(value)}
+        return False, None
+
+def _lumen_verse_owner(value):
+    # Champ vers un autre device Verse : c'est l'objet Script de cet acteur.
+    try:
+        outer = value.get_outer()
+    except Exception:
+        return None
+    return outer if isinstance(outer, unreal.Actor) else None
+
+def _lumen_describe(value):
+    if _lumen_is_list(value):
+        return {"list": [_lumen_describe(v) for v in value]}
+    if value is None:
+        return {"device": None}
+    ok, target = _lumen_wrapper_target(value)
+    if ok:
+        return {"type": value.get_class().get_name(), "device": target.get_actor_label() if target else None}
+    owner = _lumen_verse_owner(value)
+    if owner is not None:
+        return {"type": value.get_class().get_name(), "device": owner.get_actor_label()}
+    return {"value": str(value)}
+
+def _lumen_link_value(script, sample, target):
+    # Nouvelle valeur qui relie target, sur le modèle de sample (valeur actuelle du champ).
+    ok, _ = _lumen_wrapper_target(sample)
+    if ok:
+        wrapper = unreal.new_object(sample.get_class(), outer=script)
+        wrapper.set_editor_property("SavedActor", target)
+        return wrapper
+    if _lumen_verse_owner(sample) is not None:
+        return target.get_editor_property("Script")
+    raise ValueError("Ce champ n'est pas une référence vers un device (nombre, texte…). Règle-le dans le Verse ou le panneau Détails.")
 `;
 
 const TOOLS = [
@@ -239,43 +274,63 @@ result = {name: _lumen_describe(value) for name, (mangled, value) in fields.item
 `;
       const r = await send("execute_python", { code }, 60000);
       if (r.stderr) throw new Error(r.stderr);
-      return `${json(r.result)}\nLes listes vides ([]device) n'apparaissent pas : elles restent à remplir à la main dans le panneau Détails.`;
+      return `${json(r.result)}\nUne liste vide n'apparaît pas : l'utilisateur doit y ajouter un élément à la main (n'importe lequel), puis link_verse_field avec targets pourra la remplir.`;
     },
   },
   {
     name: "link_verse_field",
     description:
-      "Relie un champ @editable d'un device Verse (ex. Team1) à un device du niveau (ex. BF_TeamSettings_Team1), comme dans le panneau Détails. Champs vers UN device seulement, pas les listes. Annulable par Ctrl+Z. Lance save_current_level après la série : UEFN n'enregistre le lien qu'à la sauvegarde.",
+      "Relie un champ @editable d'un device Verse à des devices du niveau, comme dans le panneau Détails : un champ simple (Team1 → BF_TeamSettings_Team1, Hud → un autre device Verse) ou une liste (Teams → [Team1, Team2], qui remplace toute la liste). Une liste encore vide est introuvable : demande à l'utilisateur d'y ajouter un élément à la main (n'importe lequel), puis remplis-la ici. Annulable par Ctrl+Z. Lance save_current_level après la série : UEFN n'enregistre qu'à la sauvegarde.",
     schema: {
       device: { type: "string", description: "Label du device Verse à régler." },
-      field: { type: "string", description: "Nom du champ tel qu'écrit dans le Verse (ex. Team1)." },
-      target: { type: "string", description: "Label du device à relier (ex. BF_TeamSettings_Team1)." },
+      field: { type: "string", description: "Nom du champ tel qu'écrit dans le Verse (ex. Team1, Teams)." },
+      target: { type: "string", description: "Champ simple : label du device à relier (ex. BF_TeamSettings_Team1)." },
+      targets: { type: "array", items: { type: "string" }, description: "Liste : labels de tous les devices, dans l'ordre. Remplace le contenu actuel." },
     },
-    required: ["device", "field", "target"],
-    run: async ({ device, field, target }) => {
+    required: ["device", "field"],
+    run: async ({ device, field, target, targets }) => {
+      const isList = Array.isArray(targets);
+      if (!isList && !target) throw new Error("Donne target (champ simple) ou targets (liste).");
+      const wanted = isList ? targets : [target];
       const code = `${VERSE_FIELDS_PY}
 dev = _lumen_actor(${pyString(device)})
-target = _lumen_actor(${pyString(target)})
+targets = [_lumen_actor(t) for t in ${JSON.stringify(wanted)}]
+name = ${pyString(field)}
 script, fields = _lumen_verse_fields(dev)
-if ${pyString(field)} not in fields:
-    raise ValueError(f"Champ introuvable. Champs du device : {sorted(fields)}. Les listes vides ne sont pas modifiables ici.")
-mangled, wrapper = fields[${pyString(field)}]
-try:
-    wrapper.get_editor_property("SavedActor")
-except Exception:
-    raise ValueError("Ce champ n'est pas une référence vers un device (nombre, texte, liste…). Règle-le dans le Verse ou le panneau Détails.")
-with unreal.ScopedEditorTransaction("Lumen : " + ${pyString(field)}):
+if name not in fields:
+    raise ValueError(f"Champ introuvable. Champs connus : {sorted(fields)}. Si « {name} » est une liste vide, l'utilisateur doit d'abord y ajouter un élément à la main dans le panneau Détails.")
+mangled, current = fields[name]
+is_list = _lumen_is_list(current)
+if is_list != ${isList ? "True" : "False"}:
+    raise ValueError(f"« {name} » est " + ("une liste : passe targets." if is_list else "un champ simple : passe target."))
+with unreal.ScopedEditorTransaction("Lumen : " + name):
     dev.modify()
     script.modify()
-    wrapper.modify()
-    wrapper.set_editor_property("SavedActor", target)
-linked = wrapper.get_editor_property("SavedActor")
-result = linked.get_actor_label() if linked else None
+    if is_list:
+        old = list(current)
+        reuse = _lumen_wrapper_target(old[0])[0]
+        values = []
+        for i, t in enumerate(targets):
+            if reuse and i < len(old):
+                old[i].modify()
+                old[i].set_editor_property("SavedActor", t)  # garde l'élément existant
+                values.append(old[i])
+            else:
+                values.append(_lumen_link_value(script, old[0], t))
+        script.set_editor_property(mangled, values)
+    elif _lumen_wrapper_target(current)[0]:
+        current.modify()
+        current.set_editor_property("SavedActor", targets[0])
+    else:
+        script.set_editor_property(mangled, _lumen_link_value(script, current, targets[0]))
+script, fields = _lumen_verse_fields(dev)
+result = _lumen_describe(fields[name][1]) if name in fields else None
 `;
       const r = await send("execute_python", { code }, 60000);
       if (r.stderr) throw new Error(r.stderr);
-      if (r.result !== target) throw new Error(`Le lien n'a pas pris (champ = ${r.result}).`);
-      return `${device}.${field} → ${target}. Pense à save_current_level quand la série est finie.`;
+      const got = r.result?.list ? r.result.list.map((v) => v.device) : [r.result?.device];
+      if (JSON.stringify(got) !== JSON.stringify(wanted)) throw new Error(`Le lien n'a pas pris (champ = ${json(r.result)}).`);
+      return `${device}.${field} → ${isList ? `[${wanted.join(", ")}]` : target}. Pense à save_current_level quand la série est finie.`;
     },
   },
   {
