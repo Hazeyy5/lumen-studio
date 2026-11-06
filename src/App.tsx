@@ -1,4 +1,5 @@
 import { startTransition, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
@@ -89,6 +90,10 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [error, setError] = useState("");
   const [theme, setTheme] = useState<Theme>(() => readTheme());
+  const [appVersion, setAppVersion] = useState("");
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => {});
+  }, []);
   const [bankSeen, setBankSeen] = useState(false);
   const [appUpdate, setAppUpdate] = useState<Update | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
@@ -248,7 +253,9 @@ export default function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <strong>Lumen</strong>
+          <strong>
+            Lumen{appVersion ? <em className="app-version">v{appVersion}</em> : null}
+          </strong>
           <span>Jeux Roblox et Fortnite, à partir d’une phrase</span>
         </div>
         <nav>

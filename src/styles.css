@@ -178,6 +178,15 @@ code {
   letter-spacing: -0.03em;
 }
 .brand span { color: var(--muted); font-size: 13px; }
+.brand .app-version {
+  margin-left: 8px;
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--muted);
+  vertical-align: middle;
+}
 
 nav { display: flex; flex-direction: column; gap: 6px; }
 nav button {
