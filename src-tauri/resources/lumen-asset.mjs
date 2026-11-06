@@ -49,7 +49,7 @@ function fail(message) {
 
 function usage() {
   fail(
-    "Usage:\n  node tools/lumen-asset.mjs status\n  node tools/lumen-asset.mjs search [mesh|image|inspiration|texture] <mots> --for \"à quoi ça sert sur la map\"\n  node tools/lumen-asset.mjs propose VS-0001 VS-0002 --for \"décor au spawn\"\n  node tools/lumen-asset.mjs image <prompt>\n  node tools/lumen-asset.mjs icon <VS-0001 | fichier.glb>\n  node tools/lumen-asset.mjs mesh <prompt>\n  node tools/lumen-asset.mjs blender assets/blender/nom.py Titre\n  node tools/lumen-asset.mjs publish LUM-0001\n  node tools/lumen-asset.mjs get LUM-0001\n  node tools/lumen-asset.mjs get TEX-0001\n  node tools/lumen-asset.mjs get INS-0001",
+    "Usage:\n  node tools/lumen-asset.mjs status\n  node tools/lumen-asset.mjs search [mesh|image|inspiration|texture] <mots> --for \"à quoi ça sert sur la map\"\n  node tools/lumen-asset.mjs propose VS-0001 VS-0002 --for \"décor au spawn\"\n  node tools/lumen-asset.mjs image <prompt>\n  node tools/lumen-asset.mjs icon <VS-0001 | fichier.glb>\n  node tools/lumen-asset.mjs mesh <prompt>\n  node tools/lumen-asset.mjs blender assets/blender/nom.py Titre\n  node tools/lumen-asset.mjs upload assets/images/icone.png [Titre]\n  node tools/lumen-asset.mjs publish LUM-0001\n  node tools/lumen-asset.mjs get LUM-0001\n  node tools/lumen-asset.mjs get TEX-0001\n  node tools/lumen-asset.mjs get INS-0001",
   );
 }
 
@@ -436,6 +436,23 @@ async function main() {
         json.publishError ||
           "Asset créé dans Lumen mais pas publié sur Roblox. Ajoute une clé Open Cloud (asset:read + asset:write) dans Réglages.",
       );
+    }
+    return;
+  }
+
+  if (cmd === "upload") {
+    const file = rest[0];
+    const title = rest.slice(1).join(" ").trim();
+    if (!file) usage();
+    if (UEFN) fail("Projet UEFN/Unreal : rien à publier sur Roblox. Importe le fichier dans l'éditeur (import_file).");
+    const json = await call("/upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectPath: process.cwd(), file, title }),
+    });
+    printAsset(json);
+    if (!json.robloxAssetId) {
+      fail(json.publishError || "Fichier ajouté à la banque mais pas publié sur Roblox. Ajoute une clé Open Cloud (asset:read + asset:write) dans Réglages.");
     }
     return;
   }

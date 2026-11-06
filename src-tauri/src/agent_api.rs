@@ -552,6 +552,29 @@ fn handle(app: AppHandle, mut request: tiny_http::Request) {
         return;
     }
 
+    if url == "/upload" && method == tiny_http::Method::Post {
+        let payload: serde_json::Value =
+            serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({}));
+        let field = |k: &str| payload.get(k).and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let (project_path, file, title) = (field("projectPath"), field("file"), field("title"));
+        if project_path.is_empty() || file.is_empty() {
+            let _ = request.respond(error_json(400, "projectPath et file requis"));
+            return;
+        }
+        match crate::assets::upload_project_file(&project_path, &file, &title) {
+            Ok(asset) => {
+                let _ = request.respond(json_response(
+                    200,
+                    serde_json::to_string(&asset).unwrap_or_else(|_| "{}".into()),
+                ));
+            }
+            Err(err) => {
+                let _ = request.respond(error_json(400, &err));
+            }
+        }
+        return;
+    }
+
     if url == "/blender" && method == tiny_http::Method::Post {
         let payload: serde_json::Value =
             serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({}));

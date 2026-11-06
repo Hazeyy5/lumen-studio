@@ -55,6 +55,7 @@ Lumen doit être ouvert. `search` / `get` / `publish` passent par Lumen (`127.0.
 - Image : `rbxassetid://<robloxAssetId>` sur Decal / ImageLabel / Texture. Pour une icône / un prop 2D, génère un **PNG fond transparent** (pas de fond uni, pas de décor). Les textures plein cadre (herbe, brique, ciel) peuvent garder un fond.
 - Mesh : **serveur uniquement**, `InsertService.LoadAsset(tonumber(robloxAssetId))`, puis sors le MeshPart/Model. Ce n'est pas un `MeshId`.
 - N'invente jamais d'ID. La recherche ne donne **pas** d’ID Roblox : seulement après `get` validé.
+- Fichier déjà dans le projet (icône exportée de Figma, PNG que tu as fait, GLB/FBX) : `node tools/lumen-asset.mjs upload assets/images/icone.png Titre` le publie et affiche `rbxassetid://…`. Ne demande jamais à l'utilisateur de l'importer dans Studio pour te donner l'ID.
 - `get` / `image` / `mesh` : toast en haut à droite de Lumen. Attends la validation. Ne continue pas sans `robloxAssetId`.
 
 ## Inspiration (captures d'UI)

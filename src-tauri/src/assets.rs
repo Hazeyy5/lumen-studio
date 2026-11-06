@@ -595,6 +595,49 @@ pub fn save_image_to_project(
     })
 }
 
+/// Fichier déjà présent dans le projet (icône exportée de Figma, PNG fait par l'agent…) :
+/// on l'ajoute à la banque puis on le publie sur Roblox pour avoir son rbxassetid.
+pub fn upload_project_file(project_path: &str, file: &str, title: &str) -> Result<SavedAsset, String> {
+    let project = assert_lumen_project(project_path)?;
+    let raw = PathBuf::from(file.trim());
+    let full = if raw.is_absolute() { raw } else { project.join(raw) };
+    if !full.is_file() {
+        return Err(format!("Fichier introuvable : {}", full.display()));
+    }
+    if !crate::blender::under_project(&project, &full) {
+        return Err("Le fichier doit être dans le projet.".into());
+    }
+    let ext = full
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let kind = match ext.as_str() {
+        "png" | "jpg" | "jpeg" | "bmp" | "tga" => "image",
+        "glb" | "gltf" | "fbx" => "mesh",
+        other => return Err(format!("Format .{other} non publiable : PNG, JPG, BMP, TGA, GLB ou FBX.")),
+    };
+    let bytes = fs::read(&full).map_err(|e| e.to_string())?;
+    let filename = full
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("asset")
+        .to_string();
+    let item = crate::bank::add_bytes_to_bank(&bytes, &filename, kind, "agent")?;
+    let (item, publish_error) = crate::publish::auto_publish(item);
+    Ok(SavedAsset {
+        kind: kind.into(),
+        path: full.to_string_lossy().into(),
+        bank_id: Some(item.id),
+        code: Some(item.code),
+        roblox_asset_id: item.roblox_asset_id,
+        publish_error,
+        preview_path: item.preview_path,
+        prompt: if title.trim().is_empty() { filename } else { title.trim().into() },
+        can_retry: false,
+    })
+}
+
 #[tauri::command]
 pub fn save_mesh_url(
     url: String,

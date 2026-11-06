@@ -126,7 +126,7 @@ fn work_dir() -> Result<PathBuf, String> {
     Ok(dir)
 }
 
-fn under_project(project: &Path, candidate: &Path) -> bool {
+pub(crate) fn under_project(project: &Path, candidate: &Path) -> bool {
     let Ok(root) = project.canonicalize() else {
         return false;
     };
