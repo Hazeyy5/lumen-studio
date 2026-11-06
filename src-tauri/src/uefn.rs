@@ -309,7 +309,7 @@ node tools/lumen-asset.mjs blender assets/blender/crate.py Crate
 2. `get CODE` : l'utilisateur valide dans Lumen, puis Lumen copie le fichier dans `assets/images/`, `assets/meshes/` ou `assets/textures/` (chemin affiché par la commande). Rien n'est publié sur Roblox.
 3. Le fichier n'est **pas encore dans UEFN**. Demande à l'utilisateur de le glisser dans le Content Browser de UEFN, dans un dossier précis que tu choisis (ex. `Content/Lumen/Icons`). Les `.png` deviennent des textures. Les `.glb` s'importent comme Static Mesh ; si UEFN refuse le fichier, convertis-le en `.fbx` avec un script Blender.
 4. Après import et `node tools/lumen-verse.mjs build`, l'asset est utilisable en Verse par son module : `Lumen.Icons.T_coin_VS_0124` (vérifie le nom exact dans `*-Assets.digest.verse`). Une texture va dans un `texture_block{DefaultImage := …}`. Un mesh se pose dans la map ou via un device (Prop Mover, Prop-o-Matic…), pas en Verse brut.
-5. `image` / `mesh` / `blender` seulement si la recherche est vide ou si l'utilisateur a cliqué Aucune. Icônes et props 2D : **PNG fond transparent**.
+5. `image` / `mesh` / `blender` seulement si la recherche est vide ou si l'utilisateur a cliqué Aucune. Modèle 3D sur mesure : skill **lumen-3d** (`draft` en FBX avec rendus, puis `import_file`). Icônes et props 2D : **PNG fond transparent**.
 6. Inspiration UI (`INS-xxxx`) : `get` copie l'image dans `assets/inspiration/`. Lis-la et reproduis l'esprit (layout, couleurs) en UI Verse. Ne l'importe pas dans UEFN.
 "#;
 
@@ -380,6 +380,7 @@ pub fn write_uefn_bridge(dir: &Path) -> Result<(), String> {
         fs::create_dir_all(&skill_dir).map_err(|e| e.to_string())?;
         fs::write(skill_dir.join("SKILL.md"), skill).map_err(|e| e.to_string())?;
     }
+    crate::blender::write_3d_skill(dir)?;
 
     let (digests, extra_dirs) = digests_lines(dir);
     let api = UEFN_API_SECTION.replace("{digests}", &digests);

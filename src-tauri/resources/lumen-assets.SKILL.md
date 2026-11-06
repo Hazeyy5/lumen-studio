@@ -48,7 +48,7 @@ Ensuite uniquement : get VS-0124
 6. Pour **utiliser** l’asset choisi : `get CODE`. Lumen affiche une notification : l’utilisateur prévisualise et **Valider**. La commande attend ce clic.
 7. **Ne génère** (`image` / `mesh` / `blender`) **que si la recherche ne donne rien de pertinent, ou si l’utilisateur a cliqué Aucune.**
 
-Avant `mesh` : `status`. Si `meshProvider` est `blender`, **n’envoie pas un prompt Meshy**. Écris un script bpy (voir plus bas).
+Avant `mesh` : `status`. Si `meshProvider` est `blender`, **n’envoie pas un prompt Meshy**. Pour un modèle 3D sur mesure, suis le skill **lumen-3d** : script Blender, `draft` (rendus à regarder et corriger), puis `upload` du fichier validé.
 
 Lumen doit être ouvert. `search` / `get` / `publish` passent par Lumen (`127.0.0.1:17422`).
 

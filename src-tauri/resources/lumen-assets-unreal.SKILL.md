@@ -27,7 +27,7 @@ node tools/lumen-asset.mjs blender assets/blender/crate.py Crate
 2. `search` attend : Lumen ouvre un menu d'environ 10 assets, l'utilisateur en choisit **un** (ou Aucune).
 3. La commande affiche `Choisi : VS-xxxx`. Ensuite **un seul** `get` sur ce code. Ne get jamais les autres.
 4. `Aucune sélection` : ne get rien. Propose d'autres mots ou génère.
-5. Ne génère (`image` / `mesh` / `blender`) que si la recherche ne donne rien de pertinent, ou si l'utilisateur a cliqué Aucune. Avant `mesh`, lance `status` : si `meshProvider` vaut `blender`, écris un script bpy dans `assets/blender/` et lance `blender`.
+5. Ne génère (`image` / `mesh` / `blender`) que si la recherche ne donne rien de pertinent, ou si l'utilisateur a cliqué Aucune. Avant `mesh`, lance `status` : si `meshProvider` vaut `blender`, suis le skill **lumen-3d** (script Blender, `draft` en FBX avec rendus à regarder et corriger, puis import dans l'éditeur).
 
 ## Du fichier à Unreal
 

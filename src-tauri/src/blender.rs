@@ -113,6 +113,8 @@ fn runner_path() -> Result<PathBuf, String> {
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let dest = dir.join("lumen-blender-run.py");
     fs::write(&dest, include_str!("../resources/lumen-blender-run.py")).map_err(|e| e.to_string())?;
+    // Aides low poly importables depuis les scripts (`from lumen3d import *`).
+    fs::write(dir.join("lumen3d.py"), include_str!("../resources/lumen3d.py")).map_err(|e| e.to_string())?;
     Ok(dest)
 }
 
@@ -248,6 +250,100 @@ pub fn run_blender_mesh(
         },
         can_retry: false,
     })
+}
+
+/// Skill « lumen-3d » (modèles low poly avec Blender), copié dans le projet pour chaque agent.
+pub fn write_3d_skill(dir: &Path) -> Result<(), String> {
+    let files = [
+        ("SKILL.md", include_str!("../resources/lumen-3d/SKILL.md")),
+        ("references/concept-monstre.md", include_str!("../resources/lumen-3d/references/concept-monstre.md")),
+        ("references/concept-map.md", include_str!("../resources/lumen-3d/references/concept-map.md")),
+    ];
+    for agent in [".cursor", ".claude", ".codex", ".agents"] {
+        let root = dir.join(agent).join("skills").join("lumen-3d");
+        for (name, body) in files {
+            let path = root.join(name);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            fs::write(&path, body).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// Brouillon : exécute le script, exporte dans assets/drafts/<nom>/ avec des rendus PNG et un rapport,
+/// sans banque, sans validation ni publication. L'agent regarde les rendus et corrige.
+pub fn run_blender_draft(
+    project_path: &str,
+    script_path: &str,
+    name: &str,
+    format: &str,
+    srgb: bool,
+    views: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    let project = assert_lumen_project(project_path)?;
+    let blender = find_blender().ok_or(
+        "Blender introuvable. Installe Blender 4.x (blender.org) ou indique le chemin dans Réglages.",
+    )?;
+    let p = PathBuf::from(script_path.trim());
+    let script = if p.is_absolute() { p } else { project.join(p) };
+    if !script.is_file() {
+        return Err(format!("Script Blender introuvable : {}", script.display()));
+    }
+    if !under_project(&project, &script) {
+        return Err("Le script Blender doit être dans le projet".into());
+    }
+    let slug = slug_name(if name.trim().is_empty() {
+        script.file_stem().and_then(|s| s.to_str()).unwrap_or("mesh")
+    } else {
+        name
+    });
+    let dir = project.join("assets").join("drafts").join(&slug);
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let ext = if format.eq_ignore_ascii_case("fbx") { "fbx" } else { "glb" };
+    let out = dir.join(format!("{slug}.{ext}"));
+    let report = dir.join("report.json");
+    let _ = fs::remove_file(&report);
+
+    let mut cmd = Command::new(&blender);
+    cmd.arg("--background")
+        .arg("--factory-startup")
+        .arg("--python")
+        .arg(runner_path()?)
+        .arg("--")
+        .arg("--script")
+        .arg(&script)
+        .arg("--out")
+        .arg(&out)
+        .arg("--renders")
+        .arg(&dir)
+        .arg("--report")
+        .arg(&report);
+    if let Some(v) = views.map(str::trim).filter(|v| !v.is_empty()) {
+        cmd.arg("--views").arg(v);
+    }
+    if srgb && ext == "glb" {
+        cmd.arg("--srgb-colors");
+    }
+    cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000);
+    }
+    let output = cmd.output().map_err(|e| format!("Impossible de lancer Blender : {e}"))?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if !output.status.success() || !stdout.contains("LUMEN_BLENDER_OK") {
+        let detail = format!("{stdout}\n{}", String::from_utf8_lossy(&output.stderr));
+        // La trace Python utile est à la fin.
+        let clipped: String = detail.chars().rev().take(2500).collect::<String>().chars().rev().collect();
+        return Err(format!("Blender a échoué.\n{}", clipped.trim()));
+    }
+    let text = fs::read_to_string(&report).map_err(|e| format!("Rapport introuvable : {e}"))?;
+    let mut value: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    value["dir"] = serde_json::Value::String(dir.to_string_lossy().into());
+    Ok(value)
 }
 
 #[tauri::command]

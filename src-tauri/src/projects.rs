@@ -686,7 +686,7 @@ node tools/lumen-asset.mjs blender assets/blender/crate.py Crate
 1. `search` dans la banque (codes `LUM-xxxx`, `VS-xxxx`, `TEX-xxxx`) avant de générer. Toujours `--for "à quoi ça sert sur la map"` : Lumen l’affiche sur le toast. Lumen montre un **menu d’environ 10** assets : l’utilisateur en choisit **un**.
 2. `search` / `propose` attendent le choix. Ensuite **un seul** `get` sur le code choisi. Ne get jamais les autres. La recherche ne contient pas d’ID Roblox.
 3. Pour l’utiliser : `get CODE` — Lumen notifie, l’utilisateur prévisualise et valide. Ensuite Image = `rbxassetid://…`. Mesh = `InsertService.LoadAsset` côté serveur (Model, pas MeshId).
-4. `image` / `mesh` seulement si la recherche est vide ou si l’utilisateur a cliqué Aucune. Si `status` dit `meshProvider: blender`, écris un script bpy dans `assets/blender/` puis `node tools/lumen-asset.mjs blender assets/blender/nom.py Titre` — pas Meshy. Les `image` d’icônes / props 2D : **PNG fond transparent**, jamais un fond uni.
+4. `image` / `mesh` seulement si la recherche est vide ou si l’utilisateur a cliqué Aucune. Modèle 3D sur mesure (monstre, décor, objet de niveau) : suis le skill **lumen-3d** (planche de concept, script Blender, `draft` avec rendus à regarder, puis `upload`) — pas Meshy. Les `image` d’icônes / props 2D : **PNG fond transparent**, jamais un fond uni.
 4b. Pour une icône **photographiée** depuis un modèle 3D déjà choisi (fichier `.glb` / `.gltf` ou code mesh) : `node tools/lumen-asset.mjs icon VS-0124` ou `icon assets/meshes/coffre.glb`. Lumen doit être ouvert, fenêtre non réduite. Ça reprend l’atelier Modèle vers icône (contour et ombre). Ce n’est pas `image`. Options : `--zoom 1.2`, `--vertical 0.2`, `--horizontal -0.3`, `--no-outline`, `--no-shadow`.
 5. Inspiration UI (`INS-xxxx`) : `search inspiration` (3 propositions, 1 choix), puis `get` — copie dans `assets/inspiration/`. Read l'image, reproduis l'esprit (layout/couleurs), jamais publish vers Roblox.
 5b. **Fichier déjà dans le projet** (icône exportée de Figma, PNG que tu as fait, GLB/FBX) : `node tools/lumen-asset.mjs upload assets/images/icone.png Titre` le publie sur Roblox et affiche `rbxassetid://…`. Ne demande jamais à l'utilisateur d'importer un fichier dans Studio pour te donner son ID.
@@ -793,6 +793,7 @@ pub fn write_agent_bridge(dir: &Path) -> Result<(), String> {
         skill,
     )
     .map_err(|e| e.to_string())?;
+    crate::blender::write_3d_skill(dir)?;
 
     let agents_path = dir.join("AGENTS.md");
     if agents_path.exists() {

@@ -508,6 +508,7 @@ pub fn write_unreal_bridge(dir: &Path) -> Result<(), String> {
         fs::create_dir_all(&skill_dir).map_err(|e| e.to_string())?;
         fs::write(skill_dir.join("SKILL.md"), skill).map_err(|e| e.to_string())?;
     }
+    crate::blender::write_3d_skill(dir)?;
 
     enable_mcp_plugins(dir)?;
     enable_mcp_autostart(dir)?;

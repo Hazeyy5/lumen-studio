@@ -552,6 +552,35 @@ fn handle(app: AppHandle, mut request: tiny_http::Request) {
         return;
     }
 
+    if url == "/blender/draft" && method == tiny_http::Method::Post {
+        let payload: serde_json::Value =
+            serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({}));
+        let field = |k: &str| payload.get(k).and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+        let (project_path, script, name) = (field("projectPath"), field("scriptPath"), field("name"));
+        if project_path.is_empty() || script.is_empty() {
+            let _ = request.respond(error_json(400, "projectPath et scriptPath requis"));
+            return;
+        }
+        let views = field("views");
+        let srgb = payload.get("srgb").and_then(|v| v.as_bool()).unwrap_or(false);
+        match crate::blender::run_blender_draft(
+            &project_path,
+            &script,
+            &name,
+            &field("format"),
+            srgb,
+            Some(views.as_str()),
+        ) {
+            Ok(report) => {
+                let _ = request.respond(json_response(200, report.to_string()));
+            }
+            Err(err) => {
+                let _ = request.respond(error_json(400, &err));
+            }
+        }
+        return;
+    }
+
     if url == "/upload" && method == tiny_http::Method::Post {
         let payload: serde_json::Value =
             serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({}));

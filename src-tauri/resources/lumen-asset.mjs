@@ -49,7 +49,7 @@ function fail(message) {
 
 function usage() {
   fail(
-    "Usage:\n  node tools/lumen-asset.mjs status\n  node tools/lumen-asset.mjs search [mesh|image|inspiration|texture] <mots> --for \"à quoi ça sert sur la map\"\n  node tools/lumen-asset.mjs propose VS-0001 VS-0002 --for \"décor au spawn\"\n  node tools/lumen-asset.mjs image <prompt>\n  node tools/lumen-asset.mjs icon <VS-0001 | fichier.glb>\n  node tools/lumen-asset.mjs mesh <prompt>\n  node tools/lumen-asset.mjs blender assets/blender/nom.py Titre\n  node tools/lumen-asset.mjs upload assets/images/icone.png [Titre]\n  node tools/lumen-asset.mjs publish LUM-0001\n  node tools/lumen-asset.mjs get LUM-0001\n  node tools/lumen-asset.mjs get TEX-0001\n  node tools/lumen-asset.mjs get INS-0001",
+    "Usage:\n  node tools/lumen-asset.mjs status\n  node tools/lumen-asset.mjs search [mesh|image|inspiration|texture] <mots> --for \"à quoi ça sert sur la map\"\n  node tools/lumen-asset.mjs propose VS-0001 VS-0002 --for \"décor au spawn\"\n  node tools/lumen-asset.mjs image <prompt>\n  node tools/lumen-asset.mjs icon <VS-0001 | fichier.glb>\n  node tools/lumen-asset.mjs mesh <prompt>\n  node tools/lumen-asset.mjs blender assets/blender/nom.py Titre\n  node tools/lumen-asset.mjs draft assets/blender/nom.py [Nom] [--views front,back,left,right,threequarter,top] [--fbx]\n  node tools/lumen-asset.mjs upload assets/images/icone.png [Titre]\n  node tools/lumen-asset.mjs publish LUM-0001\n  node tools/lumen-asset.mjs get LUM-0001\n  node tools/lumen-asset.mjs get TEX-0001\n  node tools/lumen-asset.mjs get INS-0001",
   );
 }
 
@@ -437,6 +437,55 @@ async function main() {
           "Asset créé dans Lumen mais pas publié sur Roblox. Ajoute une clé Open Cloud (asset:read + asset:write) dans Réglages.",
       );
     }
+    return;
+  }
+
+  if (cmd === "draft") {
+    // draft assets/blender/nom.py [Nom] [--views front,top] [--fbx]
+    const args = [...rest];
+    const take = (flag) => {
+      const i = args.indexOf(flag);
+      if (i < 0) return undefined;
+      const value = args[i + 1];
+      args.splice(i, 2);
+      return value;
+    };
+    const views = take("--views") || "";
+    const fbxIndex = args.indexOf("--fbx");
+    const fbx = fbxIndex >= 0 || (UEFN && args.indexOf("--glb") < 0);
+    if (fbxIndex >= 0) args.splice(fbxIndex, 1);
+    const glbIndex = args.indexOf("--glb");
+    if (glbIndex >= 0) args.splice(glbIndex, 1);
+    const scriptPath = args[0];
+    if (!scriptPath) usage();
+    const name = args.slice(1).join(" ").trim();
+    console.error("Blender en arrière-plan (brouillon, rien n'est publié)…");
+    const r = await call("/blender/draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectPath: process.cwd(),
+        scriptPath,
+        name,
+        views,
+        format: fbx ? "fbx" : "glb",
+        srgb: !UEFN, // Roblox affiche les couleurs de sommets en sRGB
+      }),
+    });
+    const size = r.bbox_blender?.size_xyz || [];
+    console.log(`Fichier : ${relativeFile(r.file)}`);
+    console.log(`Triangles : ${r.triangles} sur ${r.meshes} meshes. Taille X×Y×Z (Blender, Z en haut) : ${size.join(" × ")}`);
+    for (const o of r.objects || []) {
+      if (/_Outline$/.test(o.name)) continue;
+      console.log(`  ${o.name}${o.parent ? ` (enfant de ${o.parent})` : ""} : ${o.tris} tris, pivot ${o.pivot.join(", ")}${o.colors ? "" : ", SANS couleur"}`);
+    }
+    const outlines = (r.objects || []).filter((o) => /_Outline$/.test(o.name)).length;
+    if (outlines) console.log(`  + ${outlines} contours (_Outline)`);
+    for (const e of r.empties || []) console.log(`  repère ${e.name} : ${e.pos.join(", ")}`);
+    for (const a of r.actions || []) console.log(`  animation ${a.name} : images ${a.frames.join("-")}`);
+    for (const w of r.warnings || []) console.log(`ATTENTION : ${w}`);
+    console.log("Rendus (lis-les avec Read et compare à la planche de concept) :");
+    for (const p of r.renders || []) console.log(`  ${relativeFile(p)}`);
     return;
   }
 
