@@ -8,6 +8,7 @@ mod catalog;
 mod compiler;
 mod git_tools;
 mod keys;
+mod knowledge_files;
 mod oauth;
 mod collab;
 mod projects;

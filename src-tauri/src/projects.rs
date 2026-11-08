@@ -699,6 +699,30 @@ node tools/lumen-asset.mjs blender assets/blender/crate.py Crate
 6. Textures (`TEX-xxxx`) : `search texture brick --for "sol de la rampe"`. `get` puis colle `rbxassetid://…` (ou `rbxasset://…`) sur ImageLabel / Texture / Decal / MeshPart.TextureID. Si le JSON a `scaleType` (textures Studio importées) : `ImageLabel.ScaleType` + `TileSize = UDim2.new(...)`. Les IDs Studio importés dans la banque sont déjà publiés.
 "#;
 
+/// Notes LihFolk (VFX, animation ; CC BY 4.0) une seule fois par projet, et les skills qui s'en servent.
+fn write_roblox_knowledge(dir: &Path) -> Result<(), String> {
+    let root = dir.join("tools").join("knowledge").join("lihfolk");
+    for (rel, body) in crate::knowledge_files::LIHFOLK_FILES {
+        let path = root.join(rel);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        fs::write(&path, body).map_err(|e| e.to_string())?;
+    }
+    let skills = [
+        ("lumen-vfx", include_str!("../resources/lumen-vfx/SKILL.md")),
+        ("lumen-animation", include_str!("../resources/lumen-animation/SKILL.md")),
+    ];
+    for agent in [".cursor", ".claude", ".codex", ".agents"] {
+        for (name, body) in skills {
+            let skill_dir = dir.join(agent).join("skills").join(name);
+            fs::create_dir_all(&skill_dir).map_err(|e| e.to_string())?;
+            fs::write(skill_dir.join("SKILL.md"), body).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn ref_section_for(dir: &Path) -> String {
     let refs = references_of(&dir.to_string_lossy()).unwrap_or_default();
     if refs.is_empty() {
@@ -800,6 +824,7 @@ pub fn write_agent_bridge(dir: &Path) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
     crate::blender::write_3d_skill(dir)?;
+    write_roblox_knowledge(dir)?;
 
     let agents_path = dir.join("AGENTS.md");
     if agents_path.exists() {

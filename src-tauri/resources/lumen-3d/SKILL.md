@@ -76,7 +76,7 @@ node tools/lumen-asset.mjs draft assets/blender/<nom>.py <Nom>
 - Vérifié dans Studio : couleurs, facettes, contour (inverted hull) et orientation arrivent comme sur les rendus `draft`. Le modèle arrive en pièces séparées sous un Model.
 - Pour le mettre dans la place ouverte (mode édition, sauvegardé avec la place) : `node tools/lumen-studio.mjs insert <assetId> --name Nom --replace --neon Eyes,Glow,Cracks`. Ne demande jamais à l'utilisateur de coller une commande dans Studio.
 - Pièces lumineuses : `Material = Neon` (ou SurfaceAppearance/éclairage) sur les MeshParts nommés Eyes / Glow…
-- Animations : **expérimental**. Le plus fiable : modèle statique bien découpé, puis Motor6D posés aux pivots et animation dans Roblox (Animation Editor ou code). Préviens l'utilisateur si tu tentes des animations Blender dans le GLB : leur import n'est pas garanti.
+- Animations : modèle statique bien découpé (pièces séparées, pivots aux articulations, mini mesh `Root` de 0.2 à l'origine), puis rig Motor6D et animation **par code** dans le jeu : suis le skill **`lumen-animation`** (les pivots sont dans `report.json`). N'exporte pas d'animations Blender dans le GLB : leur import dans Roblox n'est pas fiable.
 - **Maps** : murs, sol en damier, piliers, portes = blocs → construis-les **en Parts dans le jeu** (collisions et couleurs exactes, modifiables). Seuls les décors low poly (rochers, cristaux, obélisques, objet emblématique) passent par Blender.
 
 ### UEFN / Unreal
