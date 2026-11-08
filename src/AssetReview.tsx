@@ -251,8 +251,37 @@ function ProposeCard({
 }) {
   const [index, setIndex] = useState(0);
   const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [found, setFound] = useState<LibraryProposeItem[] | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchErr, setSearchErr] = useState("");
   const menuRef = useRef<HTMLDivElement>(null);
-  const item = proposal.items[index] ?? proposal.items[0];
+  const list = found ?? proposal.items;
+  const item = list[index] ?? list[0] ?? proposal.items[0];
+  const kinds = new Set(proposal.items.map((row) => row.kind));
+  const sameKind = kinds.size === 1 && (kinds.has("image") || kinds.has("mesh")) ? [...kinds][0] : undefined;
+
+  async function runSearch() {
+    const q = search.trim();
+    if (!q) {
+      setFound(null);
+      setIndex(0);
+      return;
+    }
+    setSearching(true);
+    setSearchErr("");
+    try {
+      const rows = await invoke<LibraryProposeItem[]>("search_library_choice", { query: q, kind: sameKind ?? null });
+      setFound(rows);
+      setIndex(0);
+      if (!rows.length) setSearchErr(`Rien trouvé pour « ${q} »`);
+      else setOpen(true);
+    } catch (error) {
+      setSearchErr(String(error));
+    } finally {
+      setSearching(false);
+    }
+  }
 
   useEffect(() => {
     if (!open) return;
@@ -275,7 +304,7 @@ function ProposeCard({
       <div className="review-head">
         <div>
           <p className="review-kicker">
-            Choisis 1 sur {proposal.items.length}
+            {found ? `Ta recherche · ${found.length} résultat${found.length > 1 ? "s" : ""}` : `Choisis 1 sur ${proposal.items.length}`}
           </p>
           <h2>Propositions</h2>
           <p className="review-purpose">
@@ -295,6 +324,46 @@ function ProposeCard({
           ×
         </button>
       </div>
+      <form
+        className="propose-search"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void runSearch();
+        }}
+      >
+        <input
+          value={search}
+          disabled={busy}
+          placeholder={sameKind === "mesh" ? "Chercher un autre modèle 3D…" : sameKind === "image" ? "Chercher une autre image…" : "Chercher autre chose dans la banque…"}
+          onChange={(event) => {
+            setSearch(event.target.value);
+            if (!event.target.value.trim() && found) {
+              setFound(null);
+              setIndex(0);
+              setSearchErr("");
+            }
+          }}
+        />
+        <button className="btn secondary" type="submit" disabled={busy || searching}>
+          {searching ? "…" : "Chercher"}
+        </button>
+        {found ? (
+          <button
+            className="btn secondary"
+            type="button"
+            title="Revenir aux propositions de l'agent"
+            onClick={() => {
+              setFound(null);
+              setSearch("");
+              setIndex(0);
+              setSearchErr("");
+            }}
+          >
+            ↺
+          </button>
+        ) : null}
+      </form>
+      {searchErr ? <small className="review-meta">{searchErr}</small> : null}
       <div className="propose-select" ref={menuRef}>
         <button
           type="button"
@@ -312,7 +381,7 @@ function ProposeCard({
         </button>
         {open ? (
           <ul className="propose-select-list" role="listbox">
-            {proposal.items.map((row, i) => (
+            {list.map((row, i) => (
               <li key={row.code}>
                 <button
                   type="button"

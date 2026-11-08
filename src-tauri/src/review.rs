@@ -139,9 +139,36 @@ fn lock_choice() -> std::sync::MutexGuard<'static, HashMap<String, PendingChoice
 }
 
 fn proposal_from_items(query: &str, purpose: &str, items: &[BankItem]) -> LibraryProposal {
-    let shown: Vec<LibraryProposalItem> = items
+    let shown = proposal_items(items, 10);
+    let label = query.trim();
+    let use_for = purpose.trim();
+    LibraryProposal {
+        id: Uuid::new_v4().to_string(),
+        query: if label.is_empty() {
+            "banque".into()
+        } else {
+            label.into()
+        },
+        purpose: use_for.into(),
+        items: shown,
+    }
+}
+
+/// Recherche libre de l'utilisateur dans la banque, depuis la carte « Propositions ».
+#[tauri::command(async)]
+pub fn search_library_choice(query: String, kind: Option<String>) -> Result<Vec<LibraryProposalItem>, String> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let items = crate::bank::search_library(query, kind.as_deref(), 24)?;
+    Ok(proposal_items(&items, 24))
+}
+
+fn proposal_items(items: &[BankItem], limit: usize) -> Vec<LibraryProposalItem> {
+    items
         .iter()
-        .take(10)
+        .take(limit)
         .map(|item| {
             let preview = item.preview_path.clone().or_else(|| {
                 let lower = item.path.to_ascii_lowercase();
@@ -165,19 +192,7 @@ fn proposal_from_items(query: &str, purpose: &str, items: &[BankItem]) -> Librar
                 roblox_asset_id: item.roblox_asset_id.clone(),
             }
         })
-        .collect();
-    let label = query.trim();
-    let use_for = purpose.trim();
-    LibraryProposal {
-        id: Uuid::new_v4().to_string(),
-        query: if label.is_empty() {
-            "banque".into()
-        } else {
-            label.into()
-        },
-        purpose: use_for.into(),
-        items: shown,
-    }
+        .collect()
 }
 
 pub fn present_library_choice(
@@ -235,6 +250,10 @@ pub fn resolve_library_choice(id: String, code: Option<String>) -> Result<(), St
                 .items
                 .iter()
                 .any(|item| item.code.eq_ignore_ascii_case(s))
+                // Asset trouvé par l'utilisateur avec la recherche de la carte : un code de banque (VS-0124, LUM-0178…).
+                || (s.len() <= 24
+                    && s.contains('-')
+                    && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
         });
     pending
         .tx

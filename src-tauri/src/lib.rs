@@ -132,6 +132,7 @@ pub fn run() {
             sync::sync_shared_bank,
             thumbs::queue_mesh_previews,
             vfx::list_vfx,
+            review::search_library_choice,
             voice::voice_status,
             voice::voice_install,
             voice::voice_transcribe,

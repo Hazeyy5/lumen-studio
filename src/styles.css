@@ -1833,3 +1833,7 @@ button.trends-row:hover { background: var(--paper-2); }
 .vfx-time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; margin-left: auto; }
 .vfx-error { color: var(--copper-deep); margin: 0; }
 @media (max-width: 760px) { .vfx-layout { grid-template-columns: 1fr; } }
+
+.propose-search { display: flex; gap: 6px; margin: 4px 0 8px; }
+.propose-search input { flex: 1; min-width: 0; padding: 6px 10px; }
+.propose-search .btn { padding: 6px 10px; }
