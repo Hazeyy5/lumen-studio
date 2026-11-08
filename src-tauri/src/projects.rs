@@ -660,6 +660,12 @@ Lis `assets/ui/pack/StarterGui/Main.rbxmx` pour voir les écrans. `Main.HUD` : `
 `ReplicatedStorage/Configuration` décrit les ids, icônes et textes. Les récompenses sont dans `ServerScriptService/Services` (`RewardFunctions`, `ProductsRewards`, `PassesRewards`, `PacksRewards`). Ne les branche que si l'écran correspondant est gardé.
 
 Si le pack est encore affiché dans Studio alors qu'il n'est plus dans Rojo, ne demande pas à l'utilisateur de le supprimer à la main. Lance `node tools/lumen-studio.mjs drop-pack`. Le plugin Lumen retire les écrans et scripts du pack dans la place ouverte. L'UI déjà écrite dans `src/client` reste.
+
+## Place ouverte dans Studio (plugin Lumen)
+Pour ajouter un modèle publié ou une structure à la place, en mode édition (visible tout de suite, sauvegardé avec la place, annulable par Ctrl+Z), ne demande jamais à l'utilisateur de coller une commande :
+- `node tools/lumen-studio.mjs insert <assetId> --name Nom --replace [--align Modele --offset 0,-0.25,0] [--neon Glow,Eyes] [--at x,y,z]` : insère le modèle, l'ancre, passe les pièces nommées en néon, cale son repère `LevelCenter` sur celui d'un modèle déjà présent.
+- `node tools/lumen-studio.mjs build assets/maps/Niveau.json --name Nom --replace [--at x,y,z]` : construit une structure en Parts (sol, murs, portes) depuis un JSON (format en tête de `tools/lumen-studio.mjs`).
+Studio doit être ouvert sur la place liée, hors Play. La commande attend le plugin et affiche le résultat.
 "#;
 
 const ASSET_SECTION: &str = r#"

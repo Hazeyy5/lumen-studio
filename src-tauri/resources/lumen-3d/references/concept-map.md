@@ -43,15 +43,13 @@ Repère : origine (0, 0, 0) = centre de l'arène au niveau du sol ; -Y (Blender)
 - Zones libres : rien de plus haut que 0.2 dans le cercle central (rayon ~30) ni dans les couloirs x -15..15 et z -15..15 ; rien de haut à moins de 20 studs de l'entrée et de la sortie.
 - Noms (utilisés par le code du jeu) : `Floor`, `Wall_West`, `Wall_East`, `Wall_North` (fond), `Wall_South` (avant), `WallCaps_*`, `Gate`, `ExitGate`. Repères : `LevelCenter` (0,0,0), `EntranceCenter`, `ExitCenter`, `LandmarkCenter`.
 
-- Méthode éprouvée : un script Python (`assets/maps/build_<niveau>.py`) qui écrit un fichier modèle Roblox `<Niveau>.rbxmx` (XML : `Model` > `Part` avec `Anchored`, `CFrame`, `size`, `Color3uint8` = 0xFFRRGGBB, `Material` 272 SmoothPlastic / 288 Neon / 1536 Ice, `TopSurface`/`BottomSurface` 0). Graine aléatoire fixe pour que les piliers restent les mêmes à chaque génération. `PrimaryPart` = `LevelCenter`. L'utilisateur le glisse dans la vue 3D de Studio (ou l'agent le synchronise avec Rojo).
+- Méthode éprouvée : un script Python (`assets/maps/build_<niveau>.py`, graine aléatoire fixe) qui écrit la structure en JSON (`assets/maps/<Niveau>.json`, format en tête de `tools/lumen-studio.mjs` : Model > Part avec size, pos, color #hex, material SmoothPlastic / Neon / Ice). `PrimaryPart` = `LevelCenter`. Puis `node tools/lumen-studio.mjs build assets/maps/<Niveau>.json --name <Niveau> --replace --at 0,200.5,0` : le plugin Lumen la construit dans la place ouverte (loin du reste du jeu si besoin).
 - Alterne des hauteurs différentes entre piliers voisins (hauts 39-44, bas 32-37) : deux chapeaux voisins au même niveau se chevauchent et scintillent.
 - Les murs avant/fond s'arrêtent à x = ±(W/2 - 5) : les coins appartiennent aux murs latéraux (sinon volumes superposés).
 
 **Décors low poly dans Blender** (un mesh par type : `Landmark`, `CrystalClusters`, `Braziers`, `Obelisks`, `Rocks`, `Plinths`, `FloatingRocks`, `Glow`) : couleurs #HEX de la planche, **grands** : face à des murs de ~40 studs, vise des amas de cristaux de 20 à 28 de haut, des rochers de 12 à 18 de large, un repère (landmark) de 30 à 35 de haut, un symbole au sol de 40 à 45 de large. Les tailles « réalistes » paraissent minuscules en jeu.
 - Écris les positions en coordonnées Roblox et convertis avec `R(x, y, z) = (x, -z, y)` vers Blender : vérifié, l'export glTF puis l'import Roblox redonnent exactement les coordonnées Roblox (pas de miroir).
-- Ajoute un petit mesh `LevelCenter` à l'origine. Après `upload`, aligne les décors sur la structure dans Studio :
-  `props:PivotTo(props:GetPivot() + (map.LevelCenter.Position - Vector3.new(0, 0.25, 0) - props:FindFirstChild("LevelCenter", true).Position))`
-  puis ancre toutes les pièces (`Anchored = true`), passe `Glow` en `Enum.Material.Neon` et rends `LevelCenter` invisible.
+- Ajoute un petit mesh `LevelCenter` à l'origine. Après `upload`, place les décors sur la structure : `node tools/lumen-studio.mjs insert <assetId> --name <Niveau>Props --replace --align <Niveau> --offset 0,-0.25,0 --neon Glow` (calage sur le repère, pièces ancrées, Glow en néon, repère rendu invisible).
 - Vérifie au `draft` (vue `top`) qu'aucun décor ne chevauche le repère, l'entrée, la sortie ou les zones libres.
 
 **UEFN** : même méthode, mais la structure se fait avec des pièces de construction ou des meshes Fortnite calés sur la grille (5,12 m / 3,84 m), et les décors en FBX.

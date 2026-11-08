@@ -118,8 +118,33 @@ pub fn spawn_server(app: AppHandle, state: StudioState, offer: OfferState) {
                         .is_file();
                 if let Some(obj) = value.as_object_mut() {
                     obj.insert("dropPack".into(), serde_json::json!(drop_pack));
+                    obj.insert("jobs".into(), serde_json::json!(pending_jobs(&snap.project_path)));
                 }
                 let _ = request.respond(json_ok(value.to_string()));
+                continue;
+            }
+
+            // Tâches des agents (insert / build) : le plugin lit la tâche complète puis renvoie le résultat.
+            if url == "/studio/job" && method == tiny_http::Method::Get {
+                let id = query_param(request.url(), "id");
+                let project = offer.lock().unwrap().project_path.clone();
+                let body = job_path(&project, &id, "json")
+                    .and_then(|p| fs::read_to_string(p).ok())
+                    .unwrap_or_else(|| "{}".into());
+                let _ = request.respond(json_ok(body));
+                continue;
+            }
+
+            if url == "/studio/job-done" && method == tiny_http::Method::Post {
+                let payload: serde_json::Value =
+                    serde_json::from_str(&body).unwrap_or_else(|_| serde_json::json!({}));
+                let id = payload.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let project = offer.lock().unwrap().project_path.clone();
+                if let (Some(job), Some(result)) = (job_path(&project, &id, "json"), job_path(&project, &id, "result.json")) {
+                    let _ = fs::write(result, payload.to_string());
+                    let _ = fs::remove_file(job);
+                }
+                let _ = request.respond(json_ok("{\"ok\":true}".into()));
                 continue;
             }
 
@@ -247,6 +272,58 @@ pub fn spawn_server(app: AppHandle, state: StudioState, offer: OfferState) {
             let _ = request.respond(tiny_http::Response::from_string("lumen"));
         }
     });
+}
+
+fn jobs_dir(project_path: &str) -> Option<PathBuf> {
+    if project_path.trim().is_empty() {
+        return None;
+    }
+    Some(PathBuf::from(project_path).join("assets").join("studio-jobs"))
+}
+
+/// Chemin d'une tâche ; l'id ne doit contenir que lettres, chiffres et tirets (pas de ../).
+fn job_path(project_path: &str, id: &str, ext: &str) -> Option<PathBuf> {
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return None;
+    }
+    jobs_dir(project_path).map(|d| d.join(format!("{id}.{ext}")))
+}
+
+/// Tâches en attente : [{id, kind}] (le contenu complet est lu par /studio/job).
+fn pending_jobs(project_path: &str) -> Vec<serde_json::Value> {
+    let Some(dir) = jobs_dir(project_path) else {
+        return Vec::new();
+    };
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut jobs: Vec<(String, serde_json::Value)> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".json") || name.ends_with(".result.json") {
+                return None;
+            }
+            let id = name.trim_end_matches(".json").to_string();
+            let kind = fs::read_to_string(entry.path())
+                .ok()
+                .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+                .and_then(|v| v.get("kind").and_then(|k| k.as_str()).map(String::from))
+                .unwrap_or_default();
+            Some((id.clone(), serde_json::json!({ "id": id, "kind": kind })))
+        })
+        .collect();
+    jobs.sort_by(|a, b| a.0.cmp(&b.0)); // ordre de création (l'id commence par l'horodatage)
+    jobs.into_iter().map(|(_, v)| v).collect()
+}
+
+fn query_param(url: &str, key: &str) -> String {
+    url.split_once('?')
+        .map(|(_, q)| q)
+        .unwrap_or("")
+        .split('&')
+        .find_map(|pair| pair.split_once('=').filter(|(k, _)| *k == key).map(|(_, v)| v.to_string()))
+        .unwrap_or_default()
 }
 
 fn is_generic_place_name(name: &str) -> bool {
@@ -806,6 +883,191 @@ local function dropEssentialPack()
 	return removed
 end
 
+-- Tâches des agents Lumen : seulement des opérations prévues (insérer un modèle publié,
+-- construire des Parts depuis un JSON), jamais de code arbitraire. Annulables par Ctrl+Z.
+local RunService = game:GetService("RunService")
+local InsertService = game:GetService("InsertService")
+
+local function hexColor(hex)
+	local h = string.gsub(tostring(hex or "cccccc"), "%W", "") -- retire le dièse
+	return Color3.fromRGB(tonumber(h:sub(1, 2), 16) or 200, tonumber(h:sub(3, 4), 16) or 200, tonumber(h:sub(5, 6), 16) or 200)
+end
+
+local function vec(t, default)
+	if type(t) == "table" then
+		return Vector3.new(t[1] or 0, t[2] or 0, t[3] or 0)
+	end
+	return default
+end
+
+local ROOTS = {
+	Workspace = workspace,
+	ReplicatedStorage = game:GetService("ReplicatedStorage"),
+	ServerStorage = game:GetService("ServerStorage"),
+	Lighting = game:GetService("Lighting"),
+}
+
+local function resolve(path)
+	path = path or "Workspace"
+	local parts = string.split(path, ".")
+	local node = ROOTS[parts[1]]
+	if not node then
+		error("racine inconnue : " .. tostring(parts[1]))
+	end
+	for i = 2, #parts do
+		node = node:FindFirstChild(parts[i])
+		if not node then
+			error("introuvable : " .. path)
+		end
+	end
+	return node
+end
+
+local built = 0
+local function buildNode(node, parent)
+	local class = node.class or "Part"
+	local inst
+	if class == "Model" or class == "Folder" then
+		inst = Instance.new(class)
+	elseif class == "Part" or class == "WedgePart" then
+		inst = Instance.new(class)
+		inst.Anchored = node.anchored ~= false
+		inst.CanCollide = node.canCollide ~= false
+		inst.CanTouch = node.canCollide ~= false
+		inst.CastShadow = node.castShadow ~= false
+		inst.Size = vec(node.size, Vector3.new(4, 1, 2))
+		local cf = CFrame.new(vec(node.pos, Vector3.zero))
+		if type(node.rot) == "table" then
+			cf = cf * CFrame.fromOrientation(math.rad(node.rot[1] or 0), math.rad(node.rot[2] or 0), math.rad(node.rot[3] or 0))
+		end
+		inst.CFrame = cf
+		inst.Color = hexColor(node.color)
+		local okMat, mat = pcall(function()
+			return Enum.Material[node.material or "SmoothPlastic"]
+		end)
+		inst.Material = okMat and mat or Enum.Material.SmoothPlastic
+		inst.Transparency = node.transparency or 0
+		inst.TopSurface = Enum.SurfaceType.Smooth
+		inst.BottomSurface = Enum.SurfaceType.Smooth
+		built += 1
+		if built % 400 == 0 then
+			task.wait()
+		end
+	else
+		error("classe non autorisée : " .. tostring(class))
+	end
+	inst.Name = node.name or class
+	for _, c in ipairs(node.children or {}) do
+		buildNode(c, inst)
+	end
+	if class == "Model" and node.primary then
+		local p = inst:FindFirstChild(node.primary)
+		if p then
+			inst.PrimaryPart = p
+		end
+	end
+	inst.Parent = parent
+	return inst
+end
+
+local function place(model, job)
+	if job.alignTo then
+		local target = resolve(job.alignTo.model)
+		local tm = target:FindFirstChild(job.alignTo.marker or "LevelCenter", true)
+		local m = model:FindFirstChild(job.marker or "LevelCenter", true)
+		if not (tm and m) then
+			error("repère d'alignement introuvable")
+		end
+		model:PivotTo(model:GetPivot() + (tm.Position + vec(job.alignTo.offset, Vector3.zero) - m.Position))
+	elseif job.at then
+		model:PivotTo(CFrame.new(vec(job.at, Vector3.zero)))
+	end
+end
+
+local function runJob(job)
+	local parent = resolve(job.parent)
+	local name = job.name
+	if job.replace and name then
+		local old = parent:FindFirstChild(name)
+		if old then
+			old:Destroy()
+		end
+	end
+	local model
+	if job.kind == "insert" then
+		local container = InsertService:LoadAsset(tonumber(job.assetId))
+		model = container
+		local kids = container:GetChildren()
+		if #kids == 1 and kids[1]:IsA("Model") then
+			model = kids[1]
+			model.Parent = nil
+			container:Destroy()
+		end
+		local neon = {}
+		for _, n in ipairs(job.neon or {}) do
+			neon[n] = true
+		end
+		for _, p in ipairs(model:GetDescendants()) do
+			if p:IsA("BasePart") then
+				if job.anchor ~= false then
+					p.Anchored = true
+				end
+				if neon[p.Name] then
+					p.Material = Enum.Material.Neon
+				end
+				if job.marker and p.Name == job.marker then
+					p.Transparency = 1
+					p.CanCollide = false
+					p.CanTouch = false
+					p.CastShadow = false
+				end
+			end
+		end
+		model.Name = name or model.Name
+		model.Parent = parent
+	elseif job.kind == "build" then
+		built = 0
+		if type(job.root) ~= "table" then
+			error("root manquant")
+		end
+		if name then
+			job.root.name = name
+		end
+		model = buildNode(job.root, parent)
+	else
+		error("tâche inconnue : " .. tostring(job.kind))
+	end
+	place(model, job)
+	return model
+end
+
+local function runJobs(list)
+	for _, head in ipairs(list) do
+		local job = jsonGet("/studio/job?id=" .. head.id)
+		if job and job.kind then
+			local CHS = game:GetService("ChangeHistoryService")
+			local okRec, recording = pcall(function()
+				return CHS:TryBeginRecording("Lumen : " .. tostring(job.kind), tostring(job.name or job.kind))
+			end)
+			local ok, result = pcall(runJob, job)
+			if okRec and recording then
+				CHS:FinishRecording(recording, ok and Enum.FinishRecordingOperation.Commit or Enum.FinishRecordingOperation.Cancel)
+			end
+			local count = 0
+			if ok and result then
+				count = #result:GetDescendants()
+			end
+			jsonPost("/studio/job-done", {
+				id = head.id,
+				ok = ok,
+				message = ok and "" or tostring(result),
+				name = ok and result and result:GetFullName() or "",
+				descendants = count,
+			})
+		end
+	end
+end
+
 task.spawn(function()
 	while true do
 		heartbeat()
@@ -820,6 +1082,9 @@ task.spawn(function()
 			if removed > 0 then
 				jsonPost("/studio/pack-dropped", { removed = removed })
 			end
+		end
+		if offer and type(offer.jobs) == "table" and #offer.jobs > 0 and RunService:IsEdit() then
+			runJobs(offer.jobs)
 		end
 		if serving then
 			local gen = offer.generation or 0
