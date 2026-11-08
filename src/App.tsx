@@ -15,6 +15,7 @@ import { ptyBus } from "./ptyBus";
 import { imageBrief, imageFilesFromTransfer, savePastedFiles, type PastedImage } from "./pasteImage";
 import { applyTheme, readTheme, toggleTheme, type Theme } from "./theme";
 import { Trends } from "./Trends";
+import { SfxPage } from "./SfxPage";
 import { VfxPage } from "./VfxViewer";
 import { VoiceButton } from "./VoiceButton";
 import { uefnStatusLabel, unrealStatusLabel, useUefnEditor, useUnrealEditor } from "./uefnStatus";
@@ -64,6 +65,7 @@ const NAV: { id: View; label: string }[] = [
   { id: "studio", label: "Studio" },
   { id: "workshop", label: "Atelier" },
   { id: "vfx", label: "VFX" },
+  { id: "sfx", label: "Sons" },
   { id: "bank", label: "Banque" },
   { id: "settings", label: "Réglages" },
 ];
@@ -335,6 +337,7 @@ export default function App() {
         {view === "trends" && <Trends />}
         {view === "workshop" && <Workshop project={current} keys={keys} />}
         {view === "vfx" && current ? <VfxPage key={current.path} projectPath={current.path} /> : null}
+        {view === "sfx" && current ? <SfxPage key={current.path} projectPath={current.path} /> : null}
         {bankSeen ? (
           <div hidden={view !== "bank"}>
             <Bank />
@@ -2649,6 +2652,7 @@ function BankThumb({ item }: { item: BankItem }) {
     return <MeshStill id={item.id} path={item.path} previewPath={item.previewPath} />;
   }
   if (item.kind === "mesh") return <div className="bank-thumb bank-mesh">3D</div>;
+  if (item.kind === "audio") return <div className="bank-thumb">🔊 Son</div>;
   return <div className="bank-thumb">{item.kind}</div>;
 }
 

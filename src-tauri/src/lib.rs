@@ -23,6 +23,7 @@ mod thumbs;
 mod trends;
 mod unreal;
 mod uefn;
+mod sfx;
 mod vfx;
 mod voice;
 
@@ -133,6 +134,10 @@ pub fn run() {
             thumbs::queue_mesh_previews,
             vfx::list_vfx,
             review::search_library_choice,
+            sfx::list_sfx,
+            sfx::save_sfx,
+            sfx::delete_sfx,
+            sfx::publish_sfx,
             voice::voice_status,
             voice::voice_install,
             voice::voice_transcribe,

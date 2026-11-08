@@ -197,6 +197,15 @@ fn prepare_upload(
                 .to_string();
             Ok((asset_type, mime, filename, raw))
         }
+        "audio" => {
+            let (asset_type, mime) = asset_spec(item)?;
+            let filename = Path::new(&item.path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("sound.wav")
+                .to_string();
+            Ok((asset_type, mime, filename, raw))
+        }
         other => Err(format!("Lumen ne publie pas encore les assets « {other} »")),
     }
 }
@@ -420,6 +429,13 @@ fn asset_spec(item: &BankItem) -> Result<(&'static str, &'static str), String> {
             other => Err(format!(
                 "Format 3D non publié automatiquement (.{other}). Open Cloud accepte GLB, GLTF ou FBX."
             )),
+        },
+        "audio" => match ext.as_str() {
+            "wav" => Ok(("Audio", "audio/wav")),
+            "mp3" => Ok(("Audio", "audio/mpeg")),
+            "ogg" => Ok(("Audio", "audio/ogg")),
+            "flac" => Ok(("Audio", "audio/flac")),
+            other => Err(format!("Format audio non publiable (.{other}) : WAV, MP3, OGG ou FLAC.")),
         },
         other => Err(format!("Lumen ne publie pas encore les assets « {other} »")),
     }

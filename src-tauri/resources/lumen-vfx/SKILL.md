@@ -94,4 +94,4 @@ Textures : utilise celles de la banque Lumen (étagère Textures, `search textur
 
 `VFX Design Playbook`, `Particle Emitters In Depth`, `Beams and Trails`, `Slash VFX Recipes - Crescent and Ring`, `Projectile VFX - Muzzle, Travel and Impact`, `Impact Decals and Material-Aware Hit Sparks`, `AoE Telegraphs - Readable Ground Warnings`, `Auras, Shields and Status Effects`, `Collectible Pickup FX - Idle Glint, Magnet Pull and Collect Pop`, `Elemental VFX Kits - Fire, Ice, Earth, Water, Wind and Lightning`, `Game Feel and Juice`, `Screen Damage Effects - Hit Flash, Low-Health Vignette and Blur`, `Replicating VFX - Server Validates, Clients Render`, `VFX Performance Budgets and Culling`, `VFX Readability and Value - Lessons from Blind Reviews`, `Stylized Lighting Recipes`, `Lighting Mood and Time of Day`, `Snow, Sandstorm, Blizzard and Ash Recipes`, `Combat Sound Design and Feedback`.
 
-Synchroniser un effet avec une animation (marqueurs `Tele` / `Hit`) : voir le skill `lumen-animation`.
+Synchroniser un effet avec une animation (marqueurs `Tele` / `Hit`) : voir le skill `lumen-animation`. Les sons (bruitages générés, mixage) : skill `lumen-audio`.

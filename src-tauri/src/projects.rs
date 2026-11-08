@@ -701,7 +701,7 @@ node tools/lumen-asset.mjs blender assets/blender/crate.py Crate
 4. `image` / `mesh` seulement si la recherche est vide ou si l’utilisateur a cliqué Aucune. Modèle 3D sur mesure (monstre, décor, objet de niveau) : suis le skill **lumen-3d** (planche de concept, script Blender, `draft` avec rendus à regarder, puis `upload`) — pas Meshy. Les `image` d’icônes / props 2D : **PNG fond transparent**, jamais un fond uni.
 4b. Pour une icône **photographiée** depuis un modèle 3D déjà choisi (fichier `.glb` / `.gltf` ou code mesh) : `node tools/lumen-asset.mjs icon VS-0124` ou `icon assets/meshes/coffre.glb`. Lumen doit être ouvert, fenêtre non réduite. Ça reprend l’atelier Modèle vers icône (contour et ombre). Ce n’est pas `image`. Options : `--zoom 1.2`, `--vertical 0.2`, `--horizontal -0.3`, `--no-outline`, `--no-shadow`.
 5. Inspiration UI (`INS-xxxx`) : `search inspiration` (3 propositions, 1 choix), puis `get` — copie dans `assets/inspiration/`. Read l'image, reproduis l'esprit (layout/couleurs), jamais publish vers Roblox.
-5b. **Fichier déjà dans le projet** (icône exportée de Figma, PNG que tu as fait, GLB/FBX) : `node tools/lumen-asset.mjs upload assets/images/icone.png Titre` le publie sur Roblox et affiche `rbxassetid://…`. Ne demande jamais à l'utilisateur d'importer un fichier dans Studio pour te donner son ID.
+5b. **Fichier déjà dans le projet** (icône exportée de Figma, PNG que tu as fait, GLB/FBX, son WAV/MP3/OGG) : `node tools/lumen-asset.mjs upload assets/images/icone.png Titre` le publie sur Roblox et affiche `rbxassetid://…`. Ne demande jamais à l'utilisateur d'importer un fichier dans Studio pour te donner son ID.
 6. Textures (`TEX-xxxx`) : `search texture brick --for "sol de la rampe"`. `get` puis colle `rbxassetid://…` (ou `rbxasset://…`) sur ImageLabel / Texture / Decal / MeshPart.TextureID. Si le JSON a `scaleType` (textures Studio importées) : `ImageLabel.ScaleType` + `TileSize = UDim2.new(...)`. Les IDs Studio importés dans la banque sont déjà publiés.
 "#;
 
@@ -716,9 +716,11 @@ fn write_roblox_knowledge(dir: &Path) -> Result<(), String> {
         fs::write(&path, body).map_err(|e| e.to_string())?;
     }
     crate::vfx::write_vfx_kit(dir)?;
+    crate::sfx::write_sfx_kit(dir)?;
     let skills = [
         ("lumen-vfx", include_str!("../resources/lumen-vfx/SKILL.md")),
         ("lumen-animation", include_str!("../resources/lumen-animation/SKILL.md")),
+        ("lumen-audio", include_str!("../resources/lumen-audio/SKILL.md")),
     ];
     for agent in [".cursor", ".claude", ".codex", ".agents"] {
         for (name, body) in skills {

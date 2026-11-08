@@ -615,7 +615,8 @@ pub fn upload_project_file(project_path: &str, file: &str, title: &str) -> Resul
     let kind = match ext.as_str() {
         "png" | "jpg" | "jpeg" | "bmp" | "tga" => "image",
         "glb" | "gltf" | "fbx" => "mesh",
-        other => return Err(format!("Format .{other} non publiable : PNG, JPG, BMP, TGA, GLB ou FBX.")),
+        "wav" | "mp3" | "ogg" | "flac" => "audio",
+        other => return Err(format!("Format .{other} non publiable : PNG, JPG, BMP, TGA, GLB, FBX, WAV, MP3, OGG ou FLAC.")),
     };
     let bytes = fs::read(&full).map_err(|e| e.to_string())?;
     let filename = full
