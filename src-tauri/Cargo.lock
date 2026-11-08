@@ -2382,6 +2382,7 @@ dependencies = [
  "tiny_http",
  "urlencoding",
  "uuid",
+ "webview2-com",
  "which",
  "zip 2.4.2",
 ]

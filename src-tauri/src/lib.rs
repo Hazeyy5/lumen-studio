@@ -41,6 +41,8 @@ pub fn run() {
     let rojo_state = Mutex::new(RojoState::default());
     let compiler_state = Mutex::new(CompilerState::default());
 
+    voice::clear_blocked_mic();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -57,6 +59,7 @@ pub fn run() {
             studio::spawn_server(app.handle().clone(), studio_state.clone(), offer_state.clone());
             agent_api::spawn_server(app.handle().clone());
             std::thread::spawn(git_tools::ensure_binaries);
+            voice::allow_microphone(app);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

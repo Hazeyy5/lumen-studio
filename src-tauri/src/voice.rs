@@ -248,3 +248,56 @@ pub fn voice_save_note(project_path: String, stamp: String, text: String) -> Res
     writeln!(f, "- **{}** — {}", clean.trim(), text.trim().replace(['\n', '\r'], " ")).map_err(|e| e.to_string())?;
     Ok(path.to_string_lossy().into())
 }
+
+/// Le micro sert seulement à la dictée locale : la WebView l'obtient sans fenêtre d'autorisation.
+pub fn allow_microphone(app: &tauri::App) {
+    #[cfg(windows)]
+    {
+        use tauri::Manager;
+        use webview2_com::Microsoft::Web::WebView2::Win32::{
+            COREWEBVIEW2_PERMISSION_KIND, COREWEBVIEW2_PERMISSION_KIND_MICROPHONE, COREWEBVIEW2_PERMISSION_STATE_ALLOW,
+        };
+        use webview2_com::PermissionRequestedEventHandler;
+        for (_, window) in app.webview_windows() {
+            let _ = window.with_webview(|webview| unsafe {
+                let Ok(core) = webview.controller().CoreWebView2() else { return };
+                let mut token = 0i64;
+                let _ = core.add_PermissionRequested(
+                    &PermissionRequestedEventHandler::create(Box::new(|_, args| {
+                        let Some(args) = args else { return Ok(()) };
+                        let mut kind = COREWEBVIEW2_PERMISSION_KIND::default();
+                        args.PermissionKind(&mut kind)?;
+                        if kind == COREWEBVIEW2_PERMISSION_KIND_MICROPHONE {
+                            args.SetState(COREWEBVIEW2_PERMISSION_STATE_ALLOW)?;
+                        }
+                        Ok(())
+                    })),
+                    &mut token,
+                );
+            });
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = app;
+}
+
+/// Efface un refus du micro mémorisé par WebView2 (clic sur « Bloquer »), avant l'ouverture de la fenêtre.
+pub fn clear_blocked_mic() {
+    let Some(base) = dirs::data_local_dir() else { return };
+    let prefs = base.join("studio.lumen.app").join("EBWebView").join("Default").join("Preferences");
+    let Ok(text) = fs::read_to_string(&prefs) else { return };
+    let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&text) else { return };
+    let Some(mic) = json
+        .pointer_mut("/profile/content_settings/exceptions/media_stream_mic")
+        .and_then(|v| v.as_object_mut())
+    else {
+        return;
+    };
+    let before = mic.len();
+    mic.retain(|_, v| v["setting"].as_i64() != Some(2));
+    if mic.len() != before {
+        if let Ok(out) = serde_json::to_string(&json) {
+            let _ = fs::write(&prefs, out);
+        }
+    }
+}
