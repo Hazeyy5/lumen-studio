@@ -24,6 +24,7 @@ mod trends;
 mod unreal;
 mod uefn;
 mod vfx;
+mod voice;
 
 use agents::SessionMap;
 use compiler::CompilerState;
@@ -128,6 +129,10 @@ pub fn run() {
             sync::sync_shared_bank,
             thumbs::queue_mesh_previews,
             vfx::list_vfx,
+            voice::voice_status,
+            voice::voice_install,
+            voice::voice_transcribe,
+            voice::voice_save_note,
             thumbs::queue_all_mesh_previews,
             catalog::list_vibestarter_bank,
             catalog::cache_remote_asset,

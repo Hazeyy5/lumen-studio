@@ -255,6 +255,7 @@ Jeu Roblox créé avec Lumen.
 Tu construis un jeu Roblox jouable. Écris le code dans `src/server`, `src/client` et `src/shared`.
 Les fichiers serveur se nomment `*.server.ts`, les clients `*.client.ts`, le reste devient des ModuleScripts.
 Ne demande pas de confirmer les étapes évidentes. Livre une première version jouable, puis itère.
+Les notes vocales de l'utilisateur (idées, bugs vus en test, choses à faire) sont dans `notes/notes-vocales.md`, les plus récentes en bas : lis-les quand il y fait référence ou te demande de les traiter.
 
 {hud_section}
 {asset_section}"#,

@@ -441,6 +441,7 @@ node tools/lumen-unreal.mjs build
 - Les erreurs déjà présentes dans des fichiers que tu n'as pas touchés : signale-les, et ne les corrige que si l'utilisateur est d'accord.
 
 Livre une première version qui compile, puis itère. Ne demande pas de confirmer les étapes évidentes.
+Les notes vocales de l'utilisateur (idées, bugs vus en test, choses à faire) sont dans `notes/notes-vocales.md`, les plus récentes en bas : lis-les quand il y fait référence ou te demande de les traiter.
 "#;
 
 const UNREAL_API_SECTION: &str = r#"

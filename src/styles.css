@@ -1084,9 +1084,35 @@ body.agent-icon-capture model-viewer:not(.agent-icon-viewer) {
 }
 .prompt-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 1fr auto auto;
   gap: 10px;
 }
+.voice-stack { display: flex; flex-direction: column; gap: 4px; }
+.voice-btn {
+  position: relative;
+  min-width: 92px;
+  padding: 4px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: box-shadow 80ms linear;
+}
+.voice-btn.recording { background: #c45c4a; border-color: #c45c4a; color: #fffaf3; }
+.voice-btn.working, .voice-btn.installing { opacity: 0.8; cursor: progress; }
+.voice-info {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  max-width: 320px;
+  white-space: normal;
+  text-align: left;
+  background: var(--ink, #1c1712);
+  color: var(--paper, #fffaf3);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  z-index: 20;
+}
+.voice-note { font-size: 12px; color: var(--muted); }
 .prompt textarea { min-height: 38px; max-height: 88px; resize: vertical; padding: 8px 12px; }
 .prompt-shots { display: flex; gap: 8px; flex-wrap: wrap; }
 .prompt-shot {

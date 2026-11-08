@@ -16,6 +16,7 @@ import { imageBrief, imageFilesFromTransfer, savePastedFiles, type PastedImage }
 import { applyTheme, readTheme, toggleTheme, type Theme } from "./theme";
 import { Trends } from "./Trends";
 import { VfxPage } from "./VfxViewer";
+import { VoiceButton } from "./VoiceButton";
 import { uefnStatusLabel, unrealStatusLabel, useUefnEditor, useUnrealEditor } from "./uefnStatus";
 import type {
   AgentKind,
@@ -856,6 +857,7 @@ function Studio({
   const [active, setActive] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   const [prompt, setPrompt] = useState("");
+  const [voiceNote, setVoiceNote] = useState("");
   const [shots, setShots] = useState<PastedImage[]>([]);
   const [busy, setBusy] = useState(false);
   const [swarmBusy, setSwarmBusy] = useState(false);
@@ -1795,6 +1797,7 @@ function Studio({
             ))}
           </div>
         ) : null}
+        {voiceNote ? <div className="voice-note">Note ajoutée à notes/notes-vocales.md : « {voiceNote} »</div> : null}
         <div className="prompt-row">
           <textarea
             value={prompt}
@@ -1810,6 +1813,25 @@ function Studio({
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send();
             }}
           />
+          <div className="voice-stack">
+            <VoiceButton
+              label="🎤 Dicter"
+              title="Parle, le texte s'ajoute au brief (transcription locale, en français)"
+              onText={(text) => setPrompt((prev) => (prev.trim() ? `${prev.trimEnd()} ${text}` : text))}
+            />
+            <VoiceButton
+              label="📝 Note"
+              title="Note vocale rangée dans notes/notes-vocales.md du projet (les agents peuvent la lire)"
+              onText={async (text) => {
+                const d = new Date();
+                const pad = (n: number) => String(n).padStart(2, "0");
+                const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                await invoke("voice_save_note", { projectPath: project.path, stamp, text });
+                setVoiceNote(text);
+                window.setTimeout(() => setVoiceNote((cur) => (cur === text ? "" : cur)), 6000);
+              }}
+            />
+          </div>
           <button
             className="btn copper"
             disabled={!currentTab?.sessionId || (!prompt.trim() && !shots.length)}
