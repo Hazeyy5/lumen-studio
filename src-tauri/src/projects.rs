@@ -255,7 +255,6 @@ Jeu Roblox créé avec Lumen.
 Tu construis un jeu Roblox jouable. Écris le code dans `src/server`, `src/client` et `src/shared`.
 Les fichiers serveur se nomment `*.server.ts`, les clients `*.client.ts`, le reste devient des ModuleScripts.
 Ne demande pas de confirmer les étapes évidentes. Livre une première version jouable, puis itère.
-Les notes vocales de l'utilisateur (idées, bugs vus en test, choses à faire) sont dans `notes/notes-vocales.md`, les plus récentes en bas : lis-les quand il y fait référence ou te demande de les traiter.
 
 {hud_section}
 {asset_section}"#,
@@ -667,6 +666,12 @@ Pour ajouter un modèle publié ou une structure à la place, en mode édition (
 - `node tools/lumen-studio.mjs insert <assetId> --name Nom --replace [--align Modele --offset 0,-0.25,0] [--neon Glow,Eyes] [--at x,y,z]` : insère le modèle, l'ancre, passe les pièces nommées en néon, cale son repère `LevelCenter` sur celui d'un modèle déjà présent.
 - `node tools/lumen-studio.mjs build assets/maps/Niveau.json --name Nom --replace [--at x,y,z]` : construit une structure en Parts (sol, murs, portes) depuis un JSON (format en tête de `tools/lumen-studio.mjs`).
 Studio doit être ouvert sur la place liée, hors Play. La commande attend le plugin et affiche le résultat.
+
+## roblox-ts : noms interdits
+`rbxtsc` refuse comme nom de variable, fonction ou paramètre les mots réservés de Luau et les globales qu'il utilise lui-même (erreur « Cannot use identifier reserved… »). Ne nomme jamais rien : `next`, `pairs`, `ipairs`, `select`, `type`, `typeof`, `print`, `error`, `assert`, `tostring`, `tonumber`, `unpack`, `rawget`, `rawset`, `rawequal`, `pcall`, `xpcall`, `require`, `getmetatable`, `setmetatable`, `script`, `game`, `workspace`, `_G`, `TS`, `and`, `or`, `not`, `local`, `nil`, `then`, `elseif`, `end`, `repeat`, `until`. Préfère un nom précis : `nextBtn`, `nextIndex`, `itemType`. Après chaque modification, compile et corrige jusqu'à 0 erreur.
+
+## Notes vocales
+Les notes vocales de l'utilisateur (idées, bugs vus en test, choses à faire) sont dans `notes/notes-vocales.md`, les plus récentes en bas : lis-les quand il y fait référence ou te demande de les traiter.
 "#;
 
 const ASSET_SECTION: &str = r#"
@@ -1301,32 +1306,60 @@ fn install_ui_kit(dir: &Path) -> Result<(), String> {
 }
 
 fn upsert_hud_section(current: &str) -> String {
-    let section = HUD_SECTION.trim_start();
-    if let Some(start) = current.find("## HUD / UI") {
-        let after = &current[start..];
-        let end = after
-            .find('\n')
-            .and_then(|nl| after[nl + 1..].find("\n## ").map(|i| start + nl + 1 + i))
-            .unwrap_or(current.len());
-        let before = current[..start].trim_end();
-        let rest = current[end..].trim_start();
-        return if rest.is_empty() {
-            format!("{before}\n\n{section}\n")
-        } else {
-            format!("{before}\n\n{section}\n{rest}")
-        };
+    const NL: char = '\n';
+    // HUD_SECTION contient plusieurs sections (« ## HUD / UI », « ## Place ouverte dans Studio »…) :
+    // on retire toutes les copies de chacune (anciennes versions dupliquées comprises), puis on remet le bloc à jour
+    // à la place de la première.
+    let owned: Vec<&str> = HUD_SECTION
+        .lines()
+        .filter(|l| l.starts_with("## "))
+        .map(|l| l.split(" (").next().unwrap_or(l).trim())
+        .collect();
+    // Découpe en blocs qui commencent chacun à une ligne « ## » (le premier bloc = l'en-tête du fichier).
+    let mut parts: Vec<&str> = Vec::new();
+    let mut start = 0usize;
+    let mut pos = 0usize;
+    for line in current.split_inclusive(NL) {
+        if line.starts_with("## ") && pos > start {
+            parts.push(&current[start..pos]);
+            start = pos;
+        }
+        pos += line.len();
     }
-    if let Some(start) = current.find("## Assets") {
-        let before = current[..start].trim_end();
-        let after = &current[start..];
-        return format!("{before}\n{HUD_SECTION}\n{after}");
+    parts.push(&current[start..]);
+    let is_owned = |part: &str| {
+        let head = part.lines().next().unwrap_or("");
+        head.starts_with("## ") && owned.iter().any(|o| head.starts_with(o))
+    };
+    let mut out = String::new();
+    let mut placed = false;
+    for part in parts {
+        if is_owned(part) {
+            if !placed {
+                out.push_str(HUD_SECTION.trim());
+                out.push(NL);
+                out.push(NL);
+                placed = true;
+            }
+            continue;
+        }
+        if !placed && part.starts_with("## Assets") {
+            out.push_str(HUD_SECTION.trim());
+            out.push(NL);
+            out.push(NL);
+            placed = true;
+        }
+        out.push_str(part);
     }
-    let mut next = current.to_string();
-    if !next.ends_with('\n') {
-        next.push('\n');
+    if !placed {
+        if !out.ends_with(NL) {
+            out.push(NL);
+        }
+        out.push(NL);
+        out.push_str(HUD_SECTION.trim());
+        out.push(NL);
     }
-    next.push_str(HUD_SECTION);
-    next
+    out
 }
 
 fn upsert_car_section(current: &str) -> String {
@@ -1549,4 +1582,3 @@ mod ui_pack_tests {
         let _ = fs::remove_dir_all(&dir);
     }
 }
-
