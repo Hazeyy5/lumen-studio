@@ -15,6 +15,7 @@ import { ptyBus } from "./ptyBus";
 import { imageBrief, imageFilesFromTransfer, savePastedFiles, type PastedImage } from "./pasteImage";
 import { applyTheme, readTheme, toggleTheme, type Theme } from "./theme";
 import { Trends } from "./Trends";
+import { VfxPage } from "./VfxViewer";
 import { uefnStatusLabel, unrealStatusLabel, useUefnEditor, useUnrealEditor } from "./uefnStatus";
 import type {
   AgentKind,
@@ -61,6 +62,7 @@ const NAV: { id: View; label: string }[] = [
   { id: "trends", label: "Tendances" },
   { id: "studio", label: "Studio" },
   { id: "workshop", label: "Atelier" },
+  { id: "vfx", label: "VFX" },
   { id: "bank", label: "Banque" },
   { id: "settings", label: "Réglages" },
 ];
@@ -331,6 +333,7 @@ export default function App() {
         )}
         {view === "trends" && <Trends />}
         {view === "workshop" && <Workshop project={current} keys={keys} />}
+        {view === "vfx" && current ? <VfxPage key={current.path} projectPath={current.path} /> : null}
         {bankSeen ? (
           <div hidden={view !== "bank"}>
             <Bank />

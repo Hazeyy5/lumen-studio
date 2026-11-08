@@ -709,6 +709,7 @@ fn write_roblox_knowledge(dir: &Path) -> Result<(), String> {
         }
         fs::write(&path, body).map_err(|e| e.to_string())?;
     }
+    crate::vfx::write_vfx_kit(dir)?;
     let skills = [
         ("lumen-vfx", include_str!("../resources/lumen-vfx/SKILL.md")),
         ("lumen-animation", include_str!("../resources/lumen-animation/SKILL.md")),

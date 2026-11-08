@@ -1793,3 +1793,17 @@ button.trends-row:hover { background: var(--paper-2); }
 
 .engine-tag.unreal { border-color: var(--ink); color: var(--ink); }
 .place-banner.warn { border-color: #d4a574; }
+
+/* Onglet VFX : liste des effets à gauche, scène 3D à droite. */
+.vfx-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 16px; align-items: start; }
+.vfx-list { display: flex; flex-direction: column; gap: 6px; }
+.vfx-list button { text-align: left; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--ink); cursor: pointer; font: inherit; overflow-wrap: anywhere; }
+.vfx-list button.on { border-color: var(--copper); color: var(--copper); }
+.vfx-stage-wrap { display: grid; gap: 10px; min-width: 0; }
+.vfx-stage { height: min(62vh, 620px); min-height: 320px; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #10131c; }
+.vfx-stage canvas { display: block; width: 100%; height: 100%; }
+.vfx-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.vfx-controls .btn.on { border-color: var(--copper); }
+.vfx-time { font-variant-numeric: tabular-nums; color: var(--muted); font-size: 13px; margin-left: auto; }
+.vfx-error { color: var(--copper-deep); margin: 0; }
+@media (max-width: 760px) { .vfx-layout { grid-template-columns: 1fr; } }

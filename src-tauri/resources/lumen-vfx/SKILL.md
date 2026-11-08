@@ -27,6 +27,29 @@ La connaissance de référence est dans `tools/knowledge/lihfolk/` : 40 notes VF
 - **Coût** : pools plafonnés (pas de clone/destroy par coup), budget par lancer, par lanceur et par client, spectateurs à moitié ou moins, un « gouverneur » global. Les effets de gameplay ne sont jamais supprimés, seulement simplifiés.
 - **Éléments** : la couleur ne suffit pas à distinguer (feu/sang, glace/foudre) ; chaque élément a sa signature de mouvement lisible en gris (voir « Elemental VFX Kits »). La glace n'apparaît pas en fondu.
 
+## Écrire un effet : format Lumen (aperçu dans l'app)
+
+Chaque effet de particules est un fichier **`assets/vfx/<Nom>.vfx.json`** : l'utilisateur le voit joué en 3D dans l'onglet **VFX** de Lumen (sol clair/sombre, mannequin de 5 studs, ralenti), mis à jour à chaque modification. Exemple complet : `assets/vfx/ExempleImpactGlace.vfx.json`.
+
+```json
+{ "name": "IcePunch", "duration": 1.2, "loop": true, "layers": [
+  { "name": "Coeur", "texture": "star", "color": [[0, "#FFFFFF"], [1, "#BFF6FF"]], "size": [[0, 4], [1, 1]],
+    "transparency": [[0, 0], [1, 1]], "lifetime": [0.08, 0.1], "speed": [0, 0], "spread": [0, 0],
+    "acceleration": [0, 0, 0], "drag": 0, "lightEmission": 1, "rotation": [0, 360], "rotSpeed": [0, 0],
+    "zOffset": 0.5, "offset": [0, 2, 0], "emits": [[0, 1]], "rate": 0, "rateFrom": 0, "rateTo": 0 } ] }
+```
+
+- Propriétés = celles d'un `ParticleEmitter` (séquences `[temps 0..1, valeur]`, premier temps 0, dernier 1 ; plages `[min, max]`). `spread` = SpreadAngle X, Z ; émission vers le haut de l'attachment placé à `offset`. `emits` = rafales `[seconde, nombre]` ; `rate` entre `rateFrom` et `rateTo` = flux.
+- `texture` : une texture de base (`glow`, `spark`, `ring`, `smoke`, `shard`, `star`, dans `assets/vfx/textures/`), ou le chemin d'un PNG du projet avec `textureId` (`rbxassetid://…`).
+- L'aperçu est une approximation (particules toujours face caméra, pas d'éclairage) : règle couleurs, rythme et lisibilité dedans, valide en Play dans Studio.
+
+Pour le jeu :
+1. `node tools/lumen-vfx.mjs textures` (une fois par projet) : publie les textures de base, garde les ids dans `assets/vfx/textures/ids.json`.
+2. `node tools/lumen-vfx.mjs sync` après chaque modification : écrit `src/shared/vfx/runtime.ts` (`buildVfx`, `playVfxAt`) et un module par effet. Ne modifie jamais ces fichiers générés : modifie le JSON.
+3. Dans le code : `import { playVfxAt } from "shared/vfx/runtime"; import { IcePunch } from "shared/vfx/IcePunch"; playVfxAt(IcePunch, hitCFrame);` ou `buildVfx(IcePunch, part).play()` pour un effet attaché à une pièce.
+
+Beams, trails, Highlights, lumières et tweens restent écrits directement en TypeScript (patron ci-dessous).
+
 ## Patron roblox-ts
 
 ```ts

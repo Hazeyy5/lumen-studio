@@ -1,0 +1,78 @@
+{
+  "name": "ExempleImpactGlace",
+  "duration": 1.4,
+  "loop": true,
+  "layers": [
+    {
+      "name": "Encre",
+      "texture": "smoke",
+      "color": [[0, "#0B1C3A"], [1, "#132B57"]],
+      "size": [[0, 3], [1, 7]],
+      "transparency": [[0, 0.35], [0.6, 0.6], [1, 1]],
+      "lifetime": [0.35, 0.5],
+      "speed": [4, 8],
+      "spread": [180, 180],
+      "drag": 4,
+      "lightEmission": 0,
+      "rotation": [0, 360],
+      "rotSpeed": [-40, 40],
+      "zOffset": -0.5,
+      "offset": [0, 2, 0],
+      "emits": [[0, 6]]
+    },
+    {
+      "name": "Corps",
+      "texture": "glow",
+      "color": [[0, "#7FE7FF"], [1, "#2F8FD8"]],
+      "size": [[0, 2], [0.3, 6], [1, 7]],
+      "transparency": [[0, 0.1], [1, 1]],
+      "lifetime": [0.25, 0.35],
+      "speed": [0, 1],
+      "lightEmission": 0.6,
+      "offset": [0, 2, 0],
+      "emits": [[0, 3]]
+    },
+    {
+      "name": "Coeur",
+      "texture": "star",
+      "color": [[0, "#FFFFFF"], [1, "#BFF6FF"]],
+      "size": [[0, 4], [1, 1]],
+      "transparency": [[0, 0], [1, 1]],
+      "lifetime": [0.08, 0.1],
+      "speed": [0, 0],
+      "lightEmission": 1,
+      "zOffset": 0.5,
+      "offset": [0, 2, 0],
+      "emits": [[0, 1]]
+    },
+    {
+      "name": "Eclats",
+      "texture": "shard",
+      "color": [[0, "#E6FCFF"], [1, "#7FE7FF"]],
+      "size": [[0, 0.8], [1, 0.3]],
+      "transparency": [[0, 0], [0.8, 0.2], [1, 1]],
+      "lifetime": [0.4, 0.7],
+      "speed": [18, 28],
+      "spread": [70, 70],
+      "acceleration": [0, -60, 0],
+      "drag": 3,
+      "lightEmission": 0.4,
+      "rotation": [0, 360],
+      "rotSpeed": [-200, 200],
+      "offset": [0, 2, 0],
+      "emits": [[0, 14]]
+    },
+    {
+      "name": "Anneau",
+      "texture": "ring",
+      "color": [[0, "#BFF6FF"], [1, "#5CF2FF"]],
+      "size": [[0, 1], [1, 12]],
+      "transparency": [[0, 0.1], [1, 1]],
+      "lifetime": [0.3, 0.3],
+      "speed": [0, 0],
+      "lightEmission": 1,
+      "offset": [0, 2, 0],
+      "emits": [[0.02, 1]]
+    }
+  ]
+}
