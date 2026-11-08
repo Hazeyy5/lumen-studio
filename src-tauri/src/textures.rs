@@ -687,7 +687,7 @@ pub fn ingest_studio_textures(payload: &serde_json::Value) -> u32 {
     added
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn add_studio_texture(name: String, content: String) -> Result<BankItem, String> {
     let mut meta = load_meta()?;
     if !upsert_studio_texture(&name, &content, &mut meta, None, None) {
@@ -704,7 +704,7 @@ pub fn add_studio_texture(name: String, content: String) -> Result<BankItem, Str
     get_item(&format!("tex:{key}"))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_texture_tiling(
     id: String,
     scale_type: Option<String>,
@@ -737,7 +737,7 @@ pub fn set_texture_tiling(
     get_item(&id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn import_studio_textures() -> Result<u32, String> {
     begin_studio_scan();
     for _ in 0..25 {

@@ -2598,6 +2598,9 @@ function StudioTilingFields({
   );
 }
 
+// Blender fabrique les miniatures 3D en arrière-plan (false s'il n'est pas installé : rendu WebGL de secours).
+let blenderThumbs = true;
+
 function BankThumb({ item }: { item: BankItem }) {
   if (item.kind === "image") {
     const src = bankImageSrc(item);
@@ -2615,6 +2618,9 @@ function BankThumb({ item }: { item: BankItem }) {
     );
   }
   if (item.kind === "mesh" && !item.path.startsWith("http")) {
+    if (blenderThumbs) {
+      return <div className="bank-thumb bank-mesh mesh-skel mesh-loading">Aperçu…</div>;
+    }
     return <MeshStill id={item.id} path={item.path} previewPath={item.previewPath} />;
   }
   if (item.kind === "mesh") return <div className="bank-thumb bank-mesh">3D</div>;
@@ -2714,6 +2720,50 @@ function Bank() {
       window.clearTimeout(timer);
     };
   }, [reload, shelf, query, page, activeKind, pageSize]);
+
+  // Miniatures 3D manquantes de la page : Blender les rend en fond, elles arrivent une par une.
+  const [thumbsLeft, setThumbsLeft] = useState(0);
+  const missingThumbs = useMemo(
+    () =>
+      [
+        ...new Set(
+          [...pageItems, ...recent]
+            .filter((item) => item.kind === "mesh" && !item.previewPath && !item.path.startsWith("http"))
+            .map((item) => item.id),
+        ),
+      ].join("\n"),
+    [pageItems, recent],
+  );
+  useEffect(() => {
+    if (!missingThumbs) return;
+    void invoke<{ blender: boolean; left: number }>("queue_mesh_previews", { ids: missingThumbs.split("\n") })
+      .then((status) => {
+        if (!status.blender && blenderThumbs) {
+          blenderThumbs = false;
+          setPageItems((items) => [...items]);
+        }
+        setThumbsLeft(status.left);
+      })
+      .catch(() => {
+        /* la grille garde les emplacements */
+      });
+  }, [missingThumbs]);
+
+  useEffect(() => {
+    const patch = (id: string, previewPath: string) => (items: BankItem[]) =>
+      items.some((item) => item.id === id)
+        ? items.map((item) => (item.id === id ? { ...item, previewPath } : item))
+        : items;
+    const offPreview = listen<{ id: string; previewPath: string }>("mesh-preview", (event) => {
+      setPageItems(patch(event.payload.id, event.payload.previewPath));
+      setRecent(patch(event.payload.id, event.payload.previewPath));
+    });
+    const offProgress = listen<number>("mesh-preview-progress", (event) => setThumbsLeft(event.payload));
+    return () => {
+      void offPreview.then((off) => off());
+      void offProgress.then((off) => off());
+    };
+  }, []);
 
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const safePage = Math.min(page, pageCount - 1);
@@ -2907,6 +2957,20 @@ function Bank() {
           <span className="bank-pack-meta">
             PNG locaux · IDs Studio (`rbxassetid://`) · ScaleType / TileSize sur les importées
           </span>
+        ) : null}
+        {shelf === "vibestarter" && blenderThumbs ? (
+          <button
+            className="btn secondary"
+            type="button"
+            disabled={thumbsLeft > 0}
+            onClick={() => {
+              void invoke<{ left: number }>("queue_all_mesh_previews")
+                .then((status) => setThumbsLeft(status.left))
+                .catch((error) => setErr(String(error)));
+            }}
+          >
+            {thumbsLeft > 0 ? `Miniatures 3D : ${thumbsLeft} restantes` : "Générer toutes les miniatures 3D"}
+          </button>
         ) : null}
         <button className="btn secondary" onClick={() => void refresh(true)}>
           Actualiser

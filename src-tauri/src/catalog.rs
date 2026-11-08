@@ -594,6 +594,56 @@ pub fn attach_preview(id_or_code: &str, preview_path: String) -> Result<(), Stri
     Ok(())
 }
 
+/// Plusieurs aperçus d'un coup : une seule lecture / écriture du catalogue (4 Mo).
+pub fn attach_previews(pairs: &[(String, String)]) -> Result<(), String> {
+    if pairs.is_empty() {
+        return Ok(());
+    }
+    let mut meta = load_meta()?;
+    let mut guard = lock_cache();
+    for (id, preview) in pairs {
+        let key = id.strip_prefix("vs:").unwrap_or(id).to_string();
+        let code = guard
+            .as_ref()
+            .and_then(|items| items.iter().find(|item| &item.id == id))
+            .map(|item| item.code.clone())
+            .unwrap_or_default();
+        meta.items
+            .entry(key)
+            .or_insert_with(|| CatalogEntry {
+                code,
+                roblox_asset_id: None,
+                preview_path: None,
+            })
+            .preview_path = Some(preview.clone());
+        if let Some(items) = guard.as_mut() {
+            if let Some(item) = items.iter_mut().find(|item| &item.id == id) {
+                item.preview_path = Some(preview.clone());
+            }
+        }
+    }
+    drop(guard);
+    save_meta(&meta)
+}
+
+/// Modèles VibeStarter par id, en un passage sur le cache.
+pub fn find_by_ids(ids: &std::collections::HashSet<String>) -> Result<Vec<BankItem>, String> {
+    with_vibestarter(false, |items| {
+        items.iter().filter(|item| ids.contains(&item.id)).cloned().collect()
+    })
+}
+
+/// Tous les modèles VibeStarter locaux sans aperçu.
+pub fn meshes_without_preview() -> Result<Vec<BankItem>, String> {
+    with_vibestarter(false, |items| {
+        items
+            .iter()
+            .filter(|item| item.kind == "mesh" && !item.path.starts_with("http") && item.preview_path.is_none())
+            .cloned()
+            .collect()
+    })
+}
+
 pub fn is_under_vibestarter(canon: &Path) -> bool {
     match vibestarter_root().and_then(|p| p.canonicalize().ok()) {
         Some(root) => canon.starts_with(root),

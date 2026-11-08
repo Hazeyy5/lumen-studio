@@ -586,7 +586,8 @@ fn sync_once(pull: bool, extra_push: Option<&BankItem>) -> Result<SyncStatus, St
     result
 }
 
-#[tauri::command]
+// async : sinon Tauri l'exécute sur le fil de l'interface et la fenêtre gèle pendant le réseau.
+#[tauri::command(async)]
 pub fn sync_shared_bank() -> Result<SyncStatus, String> {
     sync_once(true, None)
 }

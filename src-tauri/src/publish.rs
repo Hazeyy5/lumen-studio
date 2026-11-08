@@ -18,7 +18,7 @@ pub fn publish_bank_item(id: String) -> Result<PublishResult, String> {
     publish_ref(&id)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn import_to_bank(file_path: String, source: Option<String>) -> Result<BankItem, String> {
     let item = crate::bank::import_to_bank(file_path, source)?;
     if crate::bank::is_inspiration(&item) {

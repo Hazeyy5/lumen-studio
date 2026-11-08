@@ -18,6 +18,7 @@ mod studio;
 mod swarm;
 mod sync;
 mod textures;
+mod thumbs;
 mod trends;
 mod unreal;
 mod uefn;
@@ -123,6 +124,8 @@ pub fn run() {
             bank::export_lumen_bank,
             bank::import_lumen_bank,
             sync::sync_shared_bank,
+            thumbs::queue_mesh_previews,
+            thumbs::queue_all_mesh_previews,
             catalog::list_vibestarter_bank,
             catalog::cache_remote_asset,
             textures::list_textures_bank,

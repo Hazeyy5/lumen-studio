@@ -504,7 +504,40 @@ pub fn attach_preview(id: &str, preview_path: String) -> Result<(), String> {
         .or_else(|_| crate::textures::get_item(id).map(|_| ()))
 }
 
-#[tauri::command]
+/// Chemin de l'aperçu PNG d'un asset (nom de fichier dérivé de son id).
+pub(crate) fn preview_file(id: &str) -> Result<PathBuf, String> {
+    let dir = bank_root()?.join("previews");
+    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let safe: String = id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect();
+    Ok(dir.join(format!("{safe}.png")))
+}
+
+/// Plusieurs aperçus d'un coup (banque Lumen puis VibeStarter), une écriture par fichier d'index.
+pub(crate) fn attach_previews(pairs: &[(String, String)]) -> Result<(), String> {
+    if pairs.is_empty() {
+        return Ok(());
+    }
+    let mut items = load_index()?;
+    let mut rest = Vec::new();
+    let mut changed = false;
+    for (id, path) in pairs {
+        if let Some(item) = items.iter_mut().find(|i| &i.id == id) {
+            item.preview_path = Some(path.clone());
+            changed = true;
+        } else {
+            rest.push((id.clone(), path.clone()));
+        }
+    }
+    if changed {
+        save_index(&items)?;
+    }
+    crate::catalog::attach_previews(&rest)
+}
+
+#[tauri::command(async)]
 pub fn save_mesh_preview(id: String, png_base64: String) -> Result<String, String> {
     use base64::Engine;
     let bytes = base64::engine::general_purpose::STANDARD
@@ -513,26 +546,14 @@ pub fn save_mesh_preview(id: String, png_base64: String) -> Result<String, Strin
     if bytes.is_empty() {
         return Err("Aperçu vide".into());
     }
-    let dir = bank_root()?.join("previews");
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let safe: String = id
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let dest = dir.join(format!("{safe}.png"));
+    let dest = preview_file(&id)?;
     fs::write(&dest, bytes).map_err(|e| e.to_string())?;
     let path = dest.to_string_lossy().into_owned();
     attach_preview(&id, path.clone())?;
     Ok(path)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn read_lumen_file(path: String) -> Result<String, String> {
     let requested = PathBuf::from(&path);
     let canon = requested.canonicalize().map_err(|e| e.to_string())?;
@@ -589,7 +610,7 @@ pub fn copy_inspiration_into_project(
     Ok((dest.to_string_lossy().into_owned(), relative))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn export_lumen_bank(dest: String) -> Result<u32, String> {
     let root = bank_root()?;
     let dest_path = PathBuf::from(&dest);
@@ -629,7 +650,7 @@ pub fn export_lumen_bank(dest: String) -> Result<u32, String> {
     Ok(count)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn import_lumen_bank(source: String) -> Result<u32, String> {
     let src = PathBuf::from(&source);
     if !src.is_file() {
