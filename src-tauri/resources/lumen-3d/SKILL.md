@@ -73,6 +73,8 @@ node tools/lumen-asset.mjs draft assets/blender/<nom>.py <Nom>
 - 1 unité Blender = 1 stud. Un joueur mesure environ 5 studs.
 - `draft` exporte en GLB et repasse les couleurs de sommets en sRGB (sinon elles sont trop sombres dans Roblox).
 - Publication : `node tools/lumen-asset.mjs upload assets/drafts/<nom>/<nom>.glb <Titre>` → `rbxassetid`. Côté serveur : `InsertService:LoadAsset(id)` puis récupère le Model.
+- Vérifié dans Studio : couleurs, facettes, contour (inverted hull) et orientation arrivent comme sur les rendus `draft`. Le modèle arrive en pièces séparées sous un Model.
+- Pour le voir tout de suite en édition, l'utilisateur peut coller dans la barre de commande de Studio : `local m = game:GetService("InsertService"):LoadAsset(ID) m.Parent = workspace`.
 - Pièces lumineuses : `Material = Neon` (ou SurfaceAppearance/éclairage) sur les MeshParts nommés Eyes / Glow…
 - Animations : **expérimental**. Le plus fiable : modèle statique bien découpé, puis Motor6D posés aux pivots et animation dans Roblox (Animation Editor ou code). Préviens l'utilisateur si tu tentes des animations Blender dans le GLB : leur import n'est pas garanti.
 - **Maps** : murs, sol en damier, piliers, portes = blocs → construis-les **en Parts dans le jeu** (collisions et couleurs exactes, modifiables). Seuls les décors low poly (rochers, cristaux, obélisques, objet emblématique) passent par Blender.

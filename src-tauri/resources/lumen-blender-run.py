@@ -26,6 +26,11 @@ while i < len(args):
 if not opts["script"] or not opts["out"]:
     raise SystemExit("Lumen blender-run : --script et --out requis")
 
+# Chemins Windows longs (\\?\C:\...) : l'exporteur glTF de Blender les refuse.
+for key in ("script", "out", "renders", "report"):
+    if opts[key] and opts[key].startswith("\\\\?\\"):
+        opts[key] = opts[key][4:]
+
 # lumen3d.py (aides low poly) est à côté de ce lanceur.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 

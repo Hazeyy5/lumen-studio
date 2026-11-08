@@ -215,18 +215,21 @@ def join(objs, name):
     """Fusionne plusieurs objets en un seul mesh nommé (ex. tous les rochers -> 'Rocks')."""
     _sync()
     objs = [o for o in objs if o]
-    bm = bmesh.new()
     for o in objs:
-        tmp = o.data.copy()
-        tmp.transform(o.matrix_world)
-        bm.from_mesh(tmp)
-        bpy.data.meshes.remove(tmp)
-    mesh = bpy.data.meshes.new(name)
-    bm.to_mesh(mesh)
-    bm.free()
-    for o in objs:
-        bpy.data.objects.remove(o, do_unlink=True)
-    return flat(_link(bpy.data.objects.new(name, mesh)))
+        _colors(o)  # même attribut "Col" partout, sinon la fusion perd les couleurs
+    keep = objs[0]
+    with bpy.context.temp_override(active_object=keep, selected_editable_objects=objs, selected_objects=objs):
+        bpy.ops.object.join()
+    keep.name = name
+    keep.data.name = name
+    attr = keep.data.color_attributes.get("Col")
+    if attr is not None:
+        keep.data.color_attributes.active_color = attr
+        try:
+            keep.data.color_attributes.render_color_index = keep.data.color_attributes.active_color_index
+        except Exception:
+            pass
+    return flat(keep)
 
 
 def glow(obj):

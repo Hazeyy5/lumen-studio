@@ -20,6 +20,27 @@
  */
 
 import { readdirSync } from "node:fs";
+import http from "node:http";
+
+// fetch() de Node abandonne au bout de 5 min sans réponse, or `image`, `get`, `search`…
+// attendent que l'utilisateur valide dans Lumen. node:http n'a pas cette limite.
+function fetch(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(url, { method: options.method || "GET", headers: options.headers || {} }, (res) => {
+      const chunks = [];
+      res.on("data", (c) => chunks.push(c));
+      res.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, status: res.statusCode, text: async () => body });
+      });
+      res.on("error", reject);
+    });
+    req.on("error", reject);
+    req.setTimeout(0);
+    if (options.body) req.write(options.body);
+    req.end();
+  });
+}
 
 const BASE = process.env.LUMEN_ASSET_URL || "http://127.0.0.1:17422";
 

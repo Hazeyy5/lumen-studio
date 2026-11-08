@@ -598,7 +598,7 @@ pub fn save_image_to_project(
 /// Fichier déjà présent dans le projet (icône exportée de Figma, PNG fait par l'agent…) :
 /// on l'ajoute à la banque puis on le publie sur Roblox pour avoir son rbxassetid.
 pub fn upload_project_file(project_path: &str, file: &str, title: &str) -> Result<SavedAsset, String> {
-    let project = assert_lumen_project(project_path)?;
+    let project = crate::blender::plain_path(&assert_lumen_project(project_path)?);
     let raw = PathBuf::from(file.trim());
     let full = if raw.is_absolute() { raw } else { project.join(raw) };
     if !full.is_file() {

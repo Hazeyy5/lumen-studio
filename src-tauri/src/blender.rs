@@ -252,6 +252,14 @@ pub fn run_blender_mesh(
     })
 }
 
+pub(crate) fn plain_path(path: &Path) -> PathBuf {
+    let text = path.to_string_lossy();
+    match text.strip_prefix(r"\\?\") {
+        Some(rest) => PathBuf::from(rest),
+        None => path.to_path_buf(),
+    }
+}
+
 /// Skill « lumen-3d » (modèles low poly avec Blender), copié dans le projet pour chaque agent.
 pub fn write_3d_skill(dir: &Path) -> Result<(), String> {
     let files = [
@@ -282,7 +290,8 @@ pub fn run_blender_draft(
     srgb: bool,
     views: Option<&str>,
 ) -> Result<serde_json::Value, String> {
-    let project = assert_lumen_project(project_path)?;
+    // Sans le préfixe \\?\ que canonicalize ajoute sous Windows : Blender ne le comprend pas.
+    let project = plain_path(&assert_lumen_project(project_path)?);
     let blender = find_blender().ok_or(
         "Blender introuvable. Installe Blender 4.x (blender.org) ou indique le chemin dans Réglages.",
     )?;
