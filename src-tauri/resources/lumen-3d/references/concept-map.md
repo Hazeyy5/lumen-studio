@@ -43,6 +43,15 @@ Repère : origine (0, 0, 0) = centre de l'arène au niveau du sol ; -Y (Blender)
 - Zones libres : rien de plus haut que 0.2 dans le cercle central (rayon ~30) ni dans les couloirs x -15..15 et z -15..15 ; rien de haut à moins de 20 studs de l'entrée et de la sortie.
 - Noms (utilisés par le code du jeu) : `Floor`, `Wall_West`, `Wall_East`, `Wall_North` (fond), `Wall_South` (avant), `WallCaps_*`, `Gate`, `ExitGate`. Repères : `LevelCenter` (0,0,0), `EntranceCenter`, `ExitCenter`, `LandmarkCenter`.
 
-**Décors low poly dans Blender** (un mesh par type : `Landmark`, `CrystalClusters`, `Braziers`, `Obelisks`, `Rocks`, `Plinths`, `FloatingRocks`, `Glow`) : tailles exactes en studs, couleurs #HEX de la planche, grands et lisibles de loin. Exporte-les avec `draft`, place-les ensuite dans le jeu aux positions prévues.
+- Méthode éprouvée : un script Python (`assets/maps/build_<niveau>.py`) qui écrit un fichier modèle Roblox `<Niveau>.rbxmx` (XML : `Model` > `Part` avec `Anchored`, `CFrame`, `size`, `Color3uint8` = 0xFFRRGGBB, `Material` 272 SmoothPlastic / 288 Neon / 1536 Ice, `TopSurface`/`BottomSurface` 0). Graine aléatoire fixe pour que les piliers restent les mêmes à chaque génération. `PrimaryPart` = `LevelCenter`. L'utilisateur le glisse dans la vue 3D de Studio (ou l'agent le synchronise avec Rojo).
+- Alterne des hauteurs différentes entre piliers voisins (hauts 39-44, bas 32-37) : deux chapeaux voisins au même niveau se chevauchent et scintillent.
+- Les murs avant/fond s'arrêtent à x = ±(W/2 - 5) : les coins appartiennent aux murs latéraux (sinon volumes superposés).
+
+**Décors low poly dans Blender** (un mesh par type : `Landmark`, `CrystalClusters`, `Braziers`, `Obelisks`, `Rocks`, `Plinths`, `FloatingRocks`, `Glow`) : couleurs #HEX de la planche, **grands** : face à des murs de ~40 studs, vise des amas de cristaux de 20 à 28 de haut, des rochers de 12 à 18 de large, un repère (landmark) de 30 à 35 de haut, un symbole au sol de 40 à 45 de large. Les tailles « réalistes » paraissent minuscules en jeu.
+- Écris les positions en coordonnées Roblox et convertis avec `R(x, y, z) = (x, -z, y)` vers Blender : vérifié, l'export glTF puis l'import Roblox redonnent exactement les coordonnées Roblox (pas de miroir).
+- Ajoute un petit mesh `LevelCenter` à l'origine. Après `upload`, aligne les décors sur la structure dans Studio :
+  `props:PivotTo(props:GetPivot() + (map.LevelCenter.Position - Vector3.new(0, 0.25, 0) - props:FindFirstChild("LevelCenter", true).Position))`
+  puis ancre toutes les pièces (`Anchored = true`), passe `Glow` en `Enum.Material.Neon` et rends `LevelCenter` invisible.
+- Vérifie au `draft` (vue `top`) qu'aucun décor ne chevauche le repère, l'entrée, la sortie ou les zones libres.
 
 **UEFN** : même méthode, mais la structure se fait avec des pièces de construction ou des meshes Fortnite calés sur la grille (5,12 m / 3,84 m), et les décors en FBX.
