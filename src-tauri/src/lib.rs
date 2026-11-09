@@ -140,6 +140,8 @@ pub fn run() {
             sfx::publish_sfx,
             voice::voice_status,
             voice::voice_install,
+            voice::voice_install_gpu,
+            voice::voice_warmup,
             voice::voice_transcribe,
             voice::voice_save_note,
             thumbs::queue_all_mesh_previews,
@@ -161,6 +163,9 @@ pub fn run() {
         .run(|app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 agents::pause_all_on_exit(app);
+            }
+            if let tauri::RunEvent::Exit = event {
+                voice::stop_server();
             }
         });
 }

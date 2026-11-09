@@ -2,7 +2,25 @@ import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-type VoiceStatus = { ready: boolean; engine: boolean; model: boolean };
+type VoiceStatus = { ready: boolean; engine: boolean; model: boolean; gpuAvailable: boolean; gpuReady: boolean };
+
+const GPU_ASKED = "lumen-voice-gpu-asked";
+
+function gpuAsked() {
+  try {
+    return localStorage.getItem(GPU_ASKED) === "1";
+  } catch {
+    return true;
+  }
+}
+
+function markGpuAsked() {
+  try {
+    localStorage.setItem(GPU_ASKED, "1");
+  } catch {
+    /* rien */
+  }
+}
 type Phase = "idle" | "installing" | "recording" | "working";
 
 const RATE = 16000;
@@ -114,23 +132,18 @@ export function VoiceButton({
     window.setTimeout(() => setInfo((cur) => (cur === text ? "" : cur)), 5000);
   };
 
-  const ensureInstalled = async () => {
-    const status = await invoke<VoiceStatus>("voice_status");
-    if (status.ready) return true;
-    const ok = window.confirm(
-      "La dictée tourne en local sur ton PC (Whisper, très bon en français).\n\n" +
-        "Il faut télécharger le moteur une seule fois : environ 570 Mo (whisper.cpp + modèle large-v3-turbo).\n\nTélécharger maintenant ?",
-    );
-    if (!ok) return false;
+  const withProgress = async (command: string) => {
     setPhase("installing");
     setInfo("Téléchargement…");
     const unlisten = await listen<{ stage: string; done: number; total: number }>("voice-install-progress", (e) => {
       const { stage, done, total } = e.payload;
+      const pct = total ? `${Math.round((done / total) * 100)} %` : `${Math.round(done / 1e6)} Mo`;
       if (stage === "engine") setInfo("Moteur…");
-      else setInfo(total ? `Modèle ${Math.round((done / total) * 100)} %` : `Modèle ${Math.round(done / 1e6)} Mo`);
+      else if (stage === "unpack") setInfo("Installation GPU…");
+      else setInfo(`${stage === "gpu" ? "GPU" : "Modèle"} ${pct}`);
     });
     try {
-      await invoke("voice_install");
+      await invoke(command);
       setInfo("");
       return true;
     } catch (error) {
@@ -140,6 +153,32 @@ export function VoiceButton({
       unlisten();
       setPhase("idle");
     }
+  };
+
+  const offerGpu = async (status: VoiceStatus) => {
+    if (!status.gpuAvailable || status.gpuReady || gpuAsked()) return;
+    markGpuAsked();
+    const ok = window.confirm(
+      "Ta carte graphique NVIDIA peut transcrire la dictée beaucoup plus vite (environ 1 s au lieu de 5).\n\n" +
+        "Il faut télécharger le moteur GPU une seule fois : environ 700 Mo (1,2 Go sur le disque).\n\nTélécharger maintenant ?",
+    );
+    if (ok) await withProgress("voice_install_gpu");
+  };
+
+  const ensureInstalled = async () => {
+    const status = await invoke<VoiceStatus>("voice_status");
+    if (status.ready) {
+      await offerGpu(status);
+      return true;
+    }
+    const ok = window.confirm(
+      "La dictée tourne en local sur ton PC (Whisper, très bon en français).\n\n" +
+        "Il faut télécharger le moteur une seule fois : environ 570 Mo (whisper.cpp + modèle large-v3-turbo).\n\nTélécharger maintenant ?",
+    );
+    if (!ok) return false;
+    if (!(await withProgress("voice_install"))) return false;
+    await offerGpu(await invoke<VoiceStatus>("voice_status"));
+    return true;
   };
 
   const stop = async () => {
@@ -179,6 +218,8 @@ export function VoiceButton({
       flash(`Micro indisponible : ${String(error)}`);
       return;
     }
+    // Le moteur GPU se charge pendant que l'utilisateur parle.
+    void invoke("voice_warmup").catch(() => undefined);
     startedAt.current = Date.now();
     setSeconds(0);
     setPhase("recording");
