@@ -106,12 +106,9 @@ if (cmd === "render") {
 const isRoblox = existsSync(join(root, "default.project.json")) || existsSync(join(root, "node_modules", "@rbxts"));
 if ((cmd === "upload" || cmd === "sync") && !isRoblox) {
   console.log(
-    "Projet UEFN / Unreal : pas de publication Roblox. Importe le WAV dans le projet par l'éditeur ouvert :
-" +
-      "  UEFN   : outil MCP import_file, file = assets/sfx/<Nom>.wav, destination = /<Projet>/Lumen/Sfx
-" +
-      "  Unreal : call_tool lumen_toolset.LumenTools / import_file, source_file = assets/sfx/<Nom>.wav, folder_path = /Game/Lumen/Sfx, asset_name = SFX_<Nom>
-" +
+    "Projet UEFN / Unreal : pas de publication Roblox. Importe le WAV dans le projet par l'éditeur ouvert :\n" +
+      "  UEFN   : outil MCP import_file, file = assets/sfx/<Nom>.wav, destination = /<Projet>/Lumen/Sfx\n" +
+      "  Unreal : call_tool lumen_toolset.LumenTools / import_file, source_file = assets/sfx/<Nom>.wav, folder_path = /Game/Lumen/Sfx, asset_name = SFX_<Nom>\n" +
       "(ou bouton « Importer dans le projet » de l'onglet Sons de Lumen). Voir le skill lumen-audio.",
   );
   process.exit(0);
