@@ -65,7 +65,9 @@ function Waveform({ samples }: { samples: Float32Array | null }) {
 
 const PRESET_KEYS = Object.keys(PRESETS);
 
-export function SfxPage({ projectPath }: { projectPath: string }) {
+export function SfxPage({ projectPath, engine }: { projectPath: string; engine: string }) {
+  const roblox = engine !== "uefn" && engine !== "unreal";
+  const editorName = engine === "uefn" ? "UEFN" : "Unreal";
   const [files, setFiles] = useState<SfxFile[]>([]);
   const [selected, setSelected] = useState("");
   const [busy, setBusy] = useState("");
@@ -146,6 +148,11 @@ export function SfxPage({ projectPath }: { projectPath: string }) {
   async function publish(file: SfxFile) {
     setBusy("publish");
     try {
+      if (!roblox) {
+        const asset = await invoke<string>("import_sfx", { projectPath, name: file.name });
+        flash(`${file.name} importé dans ${editorName} : ${asset}`);
+        return;
+      }
       const id = await invoke<string>("publish_sfx", { projectPath, name: file.name });
       flash(`${file.name} publié : ${id}. Les agents l'utilisent après « node tools/lumen-sfx.mjs sync ».`);
     } catch (error) {
@@ -168,7 +175,7 @@ export function SfxPage({ projectPath }: { projectPath: string }) {
       <h1>Sons</h1>
       <p className="lede">
         Bruitages du projet (<code>assets/sfx/</code>), générés par Lumen : écoute ceux des agents, crée les tiens,
-        publie-les sur Roblox. Les variantes <code>_v1</code>, <code>_v2</code>… sont des propositions à départager.
+        {roblox ? "publie-les sur Roblox" : `importe-les dans ${editorName} (l'éditeur doit être ouvert sur ce projet)`}. Les variantes <code>_v1</code>, <code>_v2</code>… sont des propositions à départager.
       </p>
       <div className="vfx-layout">
         <aside className="vfx-list">
@@ -188,7 +195,7 @@ export function SfxPage({ projectPath }: { projectPath: string }) {
               }}
             >
               ▶ {f.name}
-              {f.assetId ? <small className="sfx-tag">{f.stale ? " · modifié" : " · publié"}</small> : null}
+              {f.assetId ? <small className="sfx-tag">{f.stale ? " · modifié" : roblox ? " · publié" : " · importé"}</small> : null}
             </button>
           ))}
         </aside>
@@ -214,10 +221,26 @@ export function SfxPage({ projectPath }: { projectPath: string }) {
                   type="button"
                   className="btn secondary"
                   disabled={busy !== "" || !current.wavPath || /_v\d+$/.test(current.name)}
-                  title={/_v\d+$/.test(current.name) ? "Garde d'abord la variante choisie (l'agent fait « keep »)" : "Publier le WAV sur Roblox"}
+                  title={
+                    /_v\d+$/.test(current.name)
+                      ? "Garde d'abord la variante choisie (l'agent fait « keep »)"
+                      : roblox
+                        ? "Publier le WAV sur Roblox"
+                        : `Importer le WAV dans le projet ${editorName} ouvert (Lumen/Sfx)`
+                  }
                   onClick={() => void publish(current)}
                 >
-                  {busy === "publish" ? "Publication…" : current.assetId && !current.stale ? "Republier" : "Publier sur Roblox"}
+                  {busy === "publish"
+                    ? roblox
+                      ? "Publication…"
+                      : "Import…"
+                    : roblox
+                      ? current.assetId && !current.stale
+                        ? "Republier"
+                        : "Publier sur Roblox"
+                      : current.assetId && !current.stale
+                        ? "Réimporter"
+                        : "Importer dans le projet"}
                 </button>
                 {current.assetId ? (
                   <button

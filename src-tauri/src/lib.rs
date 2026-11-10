@@ -138,6 +138,7 @@ pub fn run() {
             sfx::save_sfx,
             sfx::delete_sfx,
             sfx::publish_sfx,
+            sfx::import_sfx,
             voice::voice_status,
             voice::voice_install,
             voice::voice_install_gpu,

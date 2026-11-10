@@ -382,6 +382,7 @@ pub fn write_uefn_bridge(dir: &Path) -> Result<(), String> {
         fs::write(skill_dir.join("SKILL.md"), skill).map_err(|e| e.to_string())?;
     }
     crate::blender::write_3d_skill(dir)?;
+    crate::sfx::write_engine_kit(dir, "uefn")?;
 
     let (digests, extra_dirs) = digests_lines(dir);
     let api = UEFN_API_SECTION.replace("{digests}", &digests);

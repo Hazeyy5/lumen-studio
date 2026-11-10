@@ -264,7 +264,12 @@ export default function App() {
           <span>Jeux Roblox et Fortnite, à partir d’une phrase</span>
         </div>
         <nav>
-          {NAV.filter((item) => current || item.id === "projects" || item.id === "trends").map((item) => (
+          {NAV.filter(
+            (item) =>
+              (current || item.id === "projects" || item.id === "trends") &&
+              // L'aperçu VFX simule les ParticleEmitter de Roblox : inutile pour UEFN / Unreal (Niagara).
+              !(item.id === "vfx" && (current?.engine === "uefn" || current?.engine === "unreal")),
+          ).map((item) => (
             <button
               key={item.id}
               className={view === item.id ? "active" : ""}
@@ -336,8 +341,12 @@ export default function App() {
         )}
         {view === "trends" && <Trends />}
         {view === "workshop" && <Workshop project={current} keys={keys} />}
-        {view === "vfx" && current ? <VfxPage key={current.path} projectPath={current.path} /> : null}
-        {view === "sfx" && current ? <SfxPage key={current.path} projectPath={current.path} /> : null}
+        {view === "vfx" && current && current.engine !== "uefn" && current.engine !== "unreal" ? (
+          <VfxPage key={current.path} projectPath={current.path} />
+        ) : null}
+        {view === "sfx" && current ? (
+          <SfxPage key={current.path} projectPath={current.path} engine={current.engine || "roblox"} />
+        ) : null}
         {bankSeen ? (
           <div hidden={view !== "bank"}>
             <Bank />

@@ -705,8 +705,8 @@ node tools/lumen-asset.mjs blender assets/blender/crate.py Crate
 6. Textures (`TEX-xxxx`) : `search texture brick --for "sol de la rampe"`. `get` puis colle `rbxassetid://…` (ou `rbxasset://…`) sur ImageLabel / Texture / Decal / MeshPart.TextureID. Si le JSON a `scaleType` (textures Studio importées) : `ImageLabel.ScaleType` + `TileSize = UDim2.new(...)`. Les IDs Studio importés dans la banque sont déjà publiés.
 "#;
 
-/// Notes LihFolk (VFX, animation ; CC BY 4.0) une seule fois par projet, et les skills qui s'en servent.
-fn write_roblox_knowledge(dir: &Path) -> Result<(), String> {
+/// Notes LihFolk (VFX, audio, animation ; CC BY 4.0) dans tools/knowledge/lihfolk/ du projet.
+pub(crate) fn write_lihfolk_notes(dir: &Path) -> Result<(), String> {
     let root = dir.join("tools").join("knowledge").join("lihfolk");
     for (rel, body) in crate::knowledge_files::LIHFOLK_FILES {
         let path = root.join(rel);
@@ -715,6 +715,12 @@ fn write_roblox_knowledge(dir: &Path) -> Result<(), String> {
         }
         fs::write(&path, body).map_err(|e| e.to_string())?;
     }
+    Ok(())
+}
+
+/// Notes LihFolk et skills Roblox qui s'en servent (VFX, animation, audio).
+fn write_roblox_knowledge(dir: &Path) -> Result<(), String> {
+    write_lihfolk_notes(dir)?;
     crate::vfx::write_vfx_kit(dir)?;
     crate::sfx::write_sfx_kit(dir)?;
     let skills = [
