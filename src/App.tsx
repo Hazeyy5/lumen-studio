@@ -870,6 +870,7 @@ function Studio({
   const [paused, setPaused] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [voiceNote, setVoiceNote] = useState("");
+  const [editing, setEditing] = useState<string | null>(null);
   const [shots, setShots] = useState<PastedImage[]>([]);
   const [busy, setBusy] = useState(false);
   const [swarmBusy, setSwarmBusy] = useState(false);
@@ -1264,10 +1265,26 @@ function Studio({
     }
   }
 
+  /** Donne à l'onglet le sujet de la première demande (tant qu'il porte le nom par défaut de l'agent). */
+  function nameFromPrompt(localId: string, text: string) {
+    const name = titleFromPrompt(text);
+    if (!name) return;
+    setTabs((prev) =>
+      prev.map((tab) => (tab.localId === localId && tab.title === labelFor(tab.kind) ? { ...tab, title: name } : tab)),
+    );
+  }
+
+  function renameTab(localId: string, title: string) {
+    setTabs((prev) =>
+      prev.map((tab) => (tab.localId === localId ? { ...tab, title: title.trim() || labelFor(tab.kind) } : tab)),
+    );
+  }
+
   async function send() {
     if (!currentTab?.sessionId) return;
     const body = prompt.trim();
     if (!body && !shots.length) return;
+    if (body) nameFromPrompt(currentTab.localId, body);
     const header = shots.length ? `${imageBrief(shots)}\n\n` : "";
     const merged = `${header}${body}`;
     const text = merged.endsWith("\r") || merged.endsWith("\n") ? merged : `${merged}\r`;
@@ -1724,7 +1741,34 @@ function Studio({
                 <span className={tab.running ? "live" : paused || !tab.running ? "paused" : ""}>
                   {tab.running ? "●" : "❚❚"}
                 </span>
-                {tab.title}
+                {editing === tab.localId ? (
+                  <input
+                    className="agent-title-edit"
+                    autoFocus
+                    defaultValue={tab.title}
+                    onClick={(event) => event.stopPropagation()}
+                    onBlur={(event) => {
+                      renameTab(tab.localId, event.currentTarget.value);
+                      setEditing(null);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.currentTarget.blur();
+                      if (event.key === "Escape") setEditing(null);
+                    }}
+                  />
+                ) : (
+                  <span
+                    className="agent-title"
+                    title={`${labelFor(tab.kind)} · double-clic pour renommer`}
+                    onDoubleClick={(event) => {
+                      event.stopPropagation();
+                      setEditing(tab.localId);
+                    }}
+                  >
+                    {tab.title}
+                    {tab.title !== labelFor(tab.kind) ? <small> · {labelFor(tab.kind)}</small> : null}
+                  </span>
+                )}
                 <div className="pane-actions">
                   {tab.running ? (
                     <button
@@ -1766,6 +1810,7 @@ function Studio({
                   sessionId={tab.sessionId}
                   projectPath={project.path}
                   active={tab.localId === active}
+                  onPrompt={(line) => nameFromPrompt(tab.localId, line)}
                 />
               ) : (
                 <div className="agent-boot">
@@ -3251,6 +3296,37 @@ function Bank() {
       {lightbox ? <AssetLightbox asset={lightbox} onClose={() => setLightbox(null)} /> : null}
     </div>
   );
+}
+
+const FILLER = [
+  /^(bonjour|salut|hello|coucou|yo|hey)\b[\s,!.]*/i,
+  /^(alors|ok|okay|bon|du coup|maintenant|ensuite)\b[\s,!.]*/i,
+  /^(est-ce que )?(tu )?(peux|pourrais)[- ]tu\s+/i,
+  /^(est-ce que )?tu (peux|pourrais)\s+/i,
+  /^(j'aimerais|j’aimerais|je voudrais|je veux|il faudrait|il faut)( que tu| qu'on| qu’on| que l'on| que l’on)?\s+/i,
+  /^(stp|svp|merci)[\s,!.]*/i,
+];
+
+/** Titre court d'onglet tiré de la demande : première phrase utile, sans formules, 38 caractères max. */
+export function titleFromPrompt(text: string): string {
+  let line =
+    text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => l && !l.startsWith("[") && !/^(images?|captures?)\s*:/i.test(l) && !/\.(png|jpe?g|webp)\b/i.test(l)) ?? "";
+  line = line.split(/(?<=[.!?])\s/)[0].replace(/\s+/g, " ");
+  for (let i = 0; i < 3; i++) for (const re of FILLER) line = line.replace(re, "");
+  line = line.replace(/[\s,;:.!?]*(stp|svp|s'il te plaît|s’il te plaît)?[\s.!?]*$/i, "").trim();
+  // Réponses courtes (« oui », « continue »…) : pas un sujet de conversation.
+  if (line.length < 8 || line.split(" ").length < 2) return "";
+  // « que tu corriges » -> « corrige »
+  line = line.replace(/^(\p{L}+?)es\b/u, (word, stem: string) => (/^(corrig|ajout|cré|modifi|chang|remplac|termin)/i.test(stem) ? `${stem}e` : word));
+  if (line.length > 38) {
+    const cut = line.slice(0, 38);
+    const space = cut.lastIndexOf(" ");
+    line = `${cut.slice(0, space > 18 ? space : 38).replace(/[\s,;:.!?'’-]+$/, "")}…`;
+  }
+  return line.charAt(0).toUpperCase() + line.slice(1);
 }
 
 function labelFor(kind: AgentKind) {

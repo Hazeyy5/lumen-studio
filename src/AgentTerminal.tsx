@@ -10,12 +10,17 @@ export function AgentTerminal({
   sessionId,
   projectPath,
   active,
+  onPrompt,
 }: {
   sessionId: string;
   projectPath?: string;
   active: boolean;
+  /** Ligne tapée directement dans le terminal et validée par Entrée (sert à nommer l'onglet). */
+  onPrompt?: (line: string) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const promptRef = useRef(onPrompt);
+  promptRef.current = onPrompt;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -100,8 +105,19 @@ export function AgentTerminal({
       void injectImages(files);
     };
 
+    // Reconstitue la ligne tapée (sans les séquences d'échappement des flèches, etc.).
+    let typed = "";
     const dataSub = term.onData((data) => {
       void invoke("write_agent", { sessionId, data });
+      if (data.startsWith("\x1b")) return;
+      for (const ch of data) {
+        if (ch === "\r") {
+          if (typed.trim().length > 3) promptRef.current?.(typed);
+          typed = "";
+        } else if (ch === "\x7f" || ch === "\b") typed = typed.slice(0, -1);
+        else if (ch === "\x15" || ch === "\x03") typed = "";
+        else if (ch >= " ") typed += ch;
+      }
     });
     const ptySub = ptyBus.subscribe(sessionId, (chunk) => {
       term.write(chunk);

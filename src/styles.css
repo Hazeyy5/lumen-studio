@@ -1849,3 +1849,7 @@ button.trends-row:hover { background: var(--paper-2); }
 .sfx-name { flex: 1; min-width: 160px; padding: 6px 10px; }
 .sfx-tag { color: var(--muted); }
 .sfx-msg { font-size: 13px; color: var(--muted); margin: 0; }
+
+.agent-title { cursor: text; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.agent-title small { color: var(--muted); font-weight: 400; }
+.agent-title-edit { min-width: 0; flex: 1; padding: 2px 6px; font: inherit; }
