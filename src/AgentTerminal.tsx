@@ -11,16 +11,21 @@ export function AgentTerminal({
   projectPath,
   active,
   onPrompt,
+  onTitle,
 }: {
   sessionId: string;
   projectPath?: string;
   active: boolean;
   /** Ligne tapée directement dans le terminal et validée par Entrée (sert à nommer l'onglet). */
   onPrompt?: (line: string) => void;
+  /** Titre que l'agent donne au terminal (Claude Code y met le sujet de la conversation). */
+  onTitle?: (title: string) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const promptRef = useRef(onPrompt);
   promptRef.current = onPrompt;
+  const titleRef = useRef(onTitle);
+  titleRef.current = onTitle;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -119,6 +124,7 @@ export function AgentTerminal({
         else if (ch >= " ") typed += ch;
       }
     });
+    const titleSub = term.onTitleChange((title) => titleRef.current?.(title));
     const ptySub = ptyBus.subscribe(sessionId, (chunk) => {
       term.write(chunk);
     });
@@ -135,6 +141,7 @@ export function AgentTerminal({
       cancelAnimationFrame(frame);
       window.clearTimeout(later);
       dataSub.dispose();
+      titleSub.dispose();
       ptySub();
       observer.disconnect();
       host.removeEventListener("paste", onPaste, true);

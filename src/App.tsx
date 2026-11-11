@@ -953,6 +953,7 @@ function Studio({
             localId: agent.localId,
             kind: agent.kind,
             title: agent.title,
+            titleSource: agent.titleSource as AgentTab["titleSource"],
             resumeId: liveMatch?.resumeId || agent.resumeId || null,
             sessionId: liveMatch?.sessionId ?? null,
             running: Boolean(liveMatch),
@@ -980,6 +981,7 @@ function Studio({
         localId: tab.localId,
         kind: tab.kind,
         title: tab.title,
+        titleSource: tab.titleSource,
         resumeId: tab.resumeId,
       })),
     };
@@ -1270,13 +1272,36 @@ function Studio({
     const name = titleFromPrompt(text);
     if (!name) return;
     setTabs((prev) =>
-      prev.map((tab) => (tab.localId === localId && tab.title === labelFor(tab.kind) ? { ...tab, title: name } : tab)),
+      prev.map((tab) =>
+        tab.localId === localId && !tab.titleSource && tab.title === labelFor(tab.kind)
+          ? { ...tab, title: name, titleSource: "prompt" }
+          : tab,
+      ),
+    );
+  }
+
+  /** Titre que l'agent donne lui-même à sa conversation (titre du terminal) : prioritaire sur la première demande. */
+  function nameFromAgent(localId: string, raw: string) {
+    const name = cleanAgentTitle(raw);
+    if (!name) return;
+    setTabs((prev) =>
+      prev.map((tab) =>
+        tab.localId === localId && tab.titleSource !== "manual" && tab.title !== name
+          ? { ...tab, title: name, titleSource: "agent" }
+          : tab,
+      ),
     );
   }
 
   function renameTab(localId: string, title: string) {
     setTabs((prev) =>
-      prev.map((tab) => (tab.localId === localId ? { ...tab, title: title.trim() || labelFor(tab.kind) } : tab)),
+      prev.map((tab) =>
+        tab.localId === localId
+          ? title.trim()
+            ? { ...tab, title: title.trim(), titleSource: "manual" }
+            : { ...tab, title: labelFor(tab.kind), titleSource: undefined }
+          : tab,
+      ),
     );
   }
 
@@ -1811,6 +1836,7 @@ function Studio({
                   projectPath={project.path}
                   active={tab.localId === active}
                   onPrompt={(line) => nameFromPrompt(tab.localId, line)}
+                  onTitle={(title) => nameFromAgent(tab.localId, title)}
                 />
               ) : (
                 <div className="agent-boot">
@@ -3327,6 +3353,24 @@ export function titleFromPrompt(text: string): string {
     line = `${cut.slice(0, space > 18 ? space : 38).replace(/[\s,;:.!?'’-]+$/, "")}…`;
   }
   return line.charAt(0).toUpperCase() + line.slice(1);
+}
+
+/** Titre de terminal envoyé par l'agent (séquence OSC) : sans icône d'activité ni nom générique. */
+export function cleanAgentTitle(raw: string): string {
+  let t = raw
+    .replace(/[\u2800-\u28ff\u2733-\u2736\u273b\u273d\u2722\u00b7\u2022\u25cf\u25cb\u23fa*✳✶✻✽✢·]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  t = t.replace(/^(claude code|claude|codex|cursor(-agent)?|antigravity|agy)\s*[-–—:|]\s*/i, "").trim();
+  if (!t || t.length < 4) return "";
+  if (/^(claude( code)?|codex|cursor( agent)?|antigravity|agy|node|bash|powershell|cmd|pwsh|zsh)$/i.test(t)) return "";
+  if (/^[a-z]:[\\/]|^[~/]|\\/.test(t) || /\.(exe|cmd|ps1)$/i.test(t)) return "";
+  if (t.length > 42) {
+    const cut = t.slice(0, 42);
+    const space = cut.lastIndexOf(" ");
+    t = `${cut.slice(0, space > 20 ? space : 42).replace(/[\s,;:.!?'’-]+$/, "")}…`;
+  }
+  return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
 function labelFor(kind: AgentKind) {

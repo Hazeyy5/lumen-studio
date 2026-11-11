@@ -21,6 +21,9 @@ pub struct SwarmAgent {
     pub title: String,
     #[serde(default)]
     pub resume_id: Option<String>,
+    /// Origine du titre : "prompt" (première demande), "agent" (titre donné par l'agent), "manual" (renommé).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_source: Option<String>,
 }
 
 pub fn swarm_path(project_path: &str) -> Result<PathBuf, String> {

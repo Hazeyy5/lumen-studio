@@ -69,6 +69,8 @@ export type AgentTab = {
   sessionId: string | null;
   resumeId: string | null;
   title: string;
+  /** "prompt" : tiré de la première demande ; "agent" : titre donné par l'agent ; "manual" : renommé à la main. */
+  titleSource?: "prompt" | "agent" | "manual";
   error?: string;
   running: boolean;
 };
@@ -86,6 +88,7 @@ export type SwarmState = {
     localId: string;
     kind: AgentKind;
     title: string;
+    titleSource?: string;
     resumeId?: string | null;
   }>;
 };
