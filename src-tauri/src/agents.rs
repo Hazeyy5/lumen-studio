@@ -138,8 +138,9 @@ pub fn start_agent(
                 args.push("--session-id".into());
                 args.push(assigned_resume.clone());
             }
-            args.push("--name".into());
-            args.push(display_name);
+            // Pas de --name : Claude Code donne alors lui-même un titre à la conversation (titre du terminal),
+            // repris comme nom d'onglet par Lumen.
+            let _ = display_name;
             (bin, args)
         }
         "codex" => {

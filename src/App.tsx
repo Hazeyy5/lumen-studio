@@ -952,8 +952,9 @@ function Studio({
           return {
             localId: agent.localId,
             kind: agent.kind,
-            title: agent.title,
-            titleSource: agent.titleSource as AgentTab["titleSource"],
+            ...(/^lumen-[a-z]+-[0-9a-f]{6,}$/i.test(agent.title)
+              ? { title: labelFor(agent.kind), titleSource: undefined }
+              : { title: agent.title, titleSource: agent.titleSource as AgentTab["titleSource"] }),
             resumeId: liveMatch?.resumeId || agent.resumeId || null,
             sessionId: liveMatch?.sessionId ?? null,
             running: Boolean(liveMatch),
@@ -3363,6 +3364,8 @@ export function cleanAgentTitle(raw: string): string {
     .trim();
   t = t.replace(/^(claude code|claude|codex|cursor(-agent)?|antigravity|agy)\s*[-–—:|]\s*/i, "").trim();
   if (!t || t.length < 4) return "";
+  // Ancien nom de session donné par Lumen (--name lumen-claude-xxxxxxxx) : pas un sujet.
+  if (/^lumen-[a-z]+-[0-9a-f]{6,}$/i.test(t)) return "";
   if (/^(claude( code)?|codex|cursor( agent)?|antigravity|agy|node|bash|powershell|cmd|pwsh|zsh)$/i.test(t)) return "";
   if (/^[a-z]:[\\/]|^[~/]|\\/.test(t) || /\.(exe|cmd|ps1)$/i.test(t)) return "";
   if (t.length > 42) {
