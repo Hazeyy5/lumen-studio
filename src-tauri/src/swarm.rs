@@ -95,7 +95,13 @@ pub fn upsert_agent(project_path: &str, agent: SwarmAgent, paused: bool) {
         .iter_mut()
         .find(|item| item.local_id == agent.local_id)
     {
+        // Reprise d'un agent : garde le nom de l'onglet (donné par l'agent ou par l'utilisateur).
+        let (title, source) = (existing.title.clone(), existing.title_source.clone());
         *existing = agent;
+        if source.is_some() {
+            existing.title = title;
+            existing.title_source = source;
+        }
     } else {
         swarm.agents.push(agent);
     }

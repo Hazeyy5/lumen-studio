@@ -311,6 +311,7 @@ pub fn start_agent(
             } else {
                 Some(assigned_resume.clone())
             },
+            title_source: None,
         },
         false,
     );
